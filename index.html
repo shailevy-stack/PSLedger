@@ -195,13 +195,10 @@ async function load(quiet=false){
 async function freshWrite(fn){
   if(writeLock)return; writeLock=true;
   try{
-    const r=await apiRead(S.url);
-    const exps=Array.isArray(r.expenses)?r.expenses:[];
-    const mem=(r.memory&&typeof r.memory==="object")?r.memory:{};
-    const next=fn(exps,mem);
-    await apiWrite(S.url,next);
+    const next=fn(S.expenses, S.memory);
     S.expenses=next.expenses; S.memory=next.memory;
     refreshHistory(); refreshBalance(); refreshInsights();
+    await apiWrite(S.url,next);
   }catch(e){alert("Save failed: "+e.message);}
   writeLock=false;
 }
