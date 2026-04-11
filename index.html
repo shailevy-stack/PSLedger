@@ -111,17 +111,9 @@
       letter-spacing: 0.1em;
       color: var(--ink-light);
     }
-    .amount-input {
-      font-size: 32px;
-      font-family: 'Georgia', serif;
-      border: none;
-      border-bottom: 2px solid var(--gold);
-      background: transparent;
-      color: var(--ink);
-      padding: 4px 0;
-      outline: none;
-      width: 100%;
-    }
+    .amount-wrap { position: relative; display: flex; align-items: baseline; gap: 6px; border-bottom: 2px solid var(--gold); padding: 4px 0; }
+    .amount-prefix { font-size: 32px; font-family: 'Georgia', serif; color: var(--ink); line-height: 1; }
+    .amount-input { font-size: 32px; font-family: 'Georgia', serif; border: none; background: transparent; color: var(--ink); outline: none; width: 100%; padding: 0; }
     .text-input {
       font-size: 16px;
       font-family: 'Georgia', serif;
@@ -460,6 +452,109 @@ function startPoll() {
   pollTimer = setInterval(()=>loadData(true), 20000);
 }
 
+// ── Persistent log form (never destroyed, avoids iOS keyboard dismissal) ──────
+let logFormEl = null;
+
+function ensureLogForm() {
+  if (logFormEl) return logFormEl;
+
+  const amountInput = h("input",{class:"amount-input",type:"number",placeholder:"0.00",inputmode:"decimal",
+    onInput: e => { state.amount = e.target.value; updateSubmitBtn(); }
+  });
+  const amountWrap = h("div",{class:"amount-wrap"}, h("span",{class:"amount-prefix"},"€"), amountInput);
+
+  const descInput = h("input",{class:"text-input",type:"text",placeholder:"e.g. weekly shop, dinner…",
+    onInput: e => {
+      state.description = e.target.value;
+      state.catManual = false;
+      clearTimeout(inferTimer);
+      updateSubmitBtn();
+      if (e.target.value.trim().length >= 3) {
+        inferTimer = setTimeout(() => {
+          const cat = inferCat(state.memory, e.target.value);
+          if (cat && !state.catManual) {
+            state.category = cat;
+            state.catAutoSet = true;
+            catSelect.value = cat;
+            catSelect.className = "text-input select-highlighted";
+            autoHint.style.display = "";
+          } else {
+            state.catAutoSet = false;
+            catSelect.className = "text-input";
+            autoHint.style.display = "none";
+          }
+        }, 300);
+      } else {
+        state.catAutoSet = false;
+        catSelect.className = "text-input";
+        autoHint.style.display = "none";
+      }
+    }
+  });
+
+  const autoHint = h("span",{class:"auto-hint",style:"display:none"},"✦ auto-suggested");
+
+  const catSelect = h("select",{class:"text-input",
+    onChange: e => { state.category = e.target.value; state.catManual = true; state.catAutoSet = false; catSelect.className="text-input"; autoHint.style.display="none"; }
+  }, ...CATEGORIES.map(c => Object.assign(h("option",{value:c},c), {selected: c===state.category})));
+
+  const todayTab = h("button",{class:"date-tab active", onClick:()=>{ state.dateMode="today"; todayTab.className="date-tab active"; manualTab.className="date-tab"; datePickerWrap.style.display="none"; }}, "Today");
+  const manualTab = h("button",{class:"date-tab", onClick:()=>{ state.dateMode="manual"; todayTab.className="date-tab"; manualTab.className="date-tab active"; datePickerWrap.style.display=""; }}, "Pick date");
+  const datePicker = h("input",{class:"text-input",type:"date",value:state.manualDate,style:"margin-top:8px", onChange:e=>state.manualDate=e.target.value});
+  const datePickerWrap = h("div",{style:"display:none"},datePicker);
+
+  const submitBtn = h("button",{class:"submit-btn",disabled:true,style:"margin-top:8px",
+    onClick: async () => {
+      const amt = parseFloat(state.amount);
+      if (!amt||amt<=0||!state.description.trim()) return;
+      submitBtn.disabled = true;
+      submitBtn.textContent = "Saving…";
+      const entry = {
+        id: Date.now().toString(), person: state.user, amount: amt,
+        description: state.description.trim(), category: state.category,
+        date: state.dateMode==="today" ? todayStr() : state.manualDate,
+        createdAt: new Date().toISOString(),
+      };
+      await withFreshWrite((exps,mem) => ({
+        expenses: [...exps,entry].sort((a,b)=>b.date.localeCompare(a.date)),
+        memory: learn(mem, state.description, state.category),
+      }));
+      // Reset form
+      state.amount=""; state.description=""; state.category=CATEGORIES[0];
+      state.catAutoSet=false; state.catManual=false; state.dateMode="today";
+      amountInput.value=""; descInput.value="";
+      catSelect.value=CATEGORIES[0]; catSelect.className="text-input";
+      autoHint.style.display="none";
+      todayTab.className="date-tab active"; manualTab.className="date-tab"; datePickerWrap.style.display="none";
+      submitBtn.textContent="✓ Saved"; submitBtn.className="submit-btn saved"; submitBtn.disabled=true;
+      setTimeout(()=>{ submitBtn.textContent=`Log as ${state.user}`; submitBtn.className="submit-btn"; updateSubmitBtn(); },2000);
+    }
+  });
+  submitBtn.textContent = `Log as ${state.user}`;
+
+  function updateSubmitBtn() {
+    const ok = parseFloat(state.amount)>0 && state.description.trim().length>0;
+    submitBtn.disabled = !ok;
+  }
+
+  logFormEl = h("div",{class:"form",id:"log-form"},
+    h("div",{class:"form-row"}, h("label",{class:"label"},"Amount"), amountWrap),
+    h("div",{class:"form-row"}, h("label",{class:"label"},"What for?"), descInput),
+    h("div",{class:"form-row"},
+      h("div",{class:"category-label-row"}, h("label",{class:"label"},"Category"), autoHint),
+      catSelect,
+    ),
+    h("div",{class:"form-row"},
+      h("label",{class:"label"},"Date"),
+      h("div",{class:"date-tabs"}, todayTab, manualTab),
+      datePickerWrap,
+    ),
+    submitBtn,
+  );
+
+  return logFormEl;
+}
+
 // ── Render ────────────────────────────────────────────────────────────────────
 function render() {
   const root = el("root");
@@ -535,7 +630,7 @@ function renderPick() {
       h("div",{class:"pick-buttons"},
         ...PEOPLE.map(p=>h("button",{class:"pick-btn",onClick:()=>{ls.set("lb_user",p);setState({user:p});}},p))
       ),
-      h("button",{class:"reset-btn",onClick:()=>{ls.del("lb_url");setState({scriptUrl:"",setupStep:1});}}, "⚙ Reset connection"),
+      h("button",{class:"reset-btn",onClick:()=>{ls.del("lb_url");logFormEl=null;setState({scriptUrl:"",setupStep:1});}}, "⚙ Reset connection"),
     )
   );
 }
@@ -553,7 +648,7 @@ function renderApp() {
       h("span",{style:"font-size:20px"},"📒"),
       h("span",{class:"header-title"},"Shared Ledger"),
     ),
-    h("button",{class:"user-badge",onClick:()=>{ls.del("lb_user");setState({user:""});}},state.user+" ↩"),
+    h("button",{class:"user-badge",onClick:()=>{ls.del("lb_user");logFormEl=null;setState({user:""});}},state.user+" ↩"),
   );
 
   const nav = h("div",{class:"nav"},
@@ -572,63 +667,7 @@ function renderApp() {
 }
 
 function renderLog() {
-  // Category inference on description change
-  function onDescChange(e) {
-    const val = e.target.value;
-    state.description = val;
-    state.catManual = false;
-    clearTimeout(inferTimer);
-    if (val.trim().length>=3) {
-      inferTimer = setTimeout(()=>{
-        const cat = inferCat(state.memory,val);
-        if (cat) setState({category:cat,catAutoSet:true});
-        else setState({catAutoSet:false});
-      },300);
-    } else {
-      setState({catAutoSet:false});
-    }
-  }
-
-  const catSelect = Object.assign(
-    h("select",{
-      class:"text-input"+(state.catAutoSet?" select-highlighted":""),
-      onChange:e=>{setState({category:e.target.value,catManual:true,catAutoSet:false});}
-    }, ...CATEGORIES.map(c=>Object.assign(h("option",{value:c},c),{selected:c===state.category}))),
-  );
-
-  return h("div",{class:"form"},
-    h("div",{class:"form-row"},
-      h("label",{class:"label"},"Amount (€)"),
-      Object.assign(h("input",{class:"amount-input",type:"number",placeholder:"0.00",inputmode:"decimal",value:state.amount,
-        onInput:e=>state.amount=e.target.value})),
-    ),
-    h("div",{class:"form-row"},
-      h("label",{class:"label"},"What for?"),
-      Object.assign(h("input",{class:"text-input",type:"text",placeholder:"e.g. weekly shop, dinner…",value:state.description,
-        onInput:onDescChange})),
-    ),
-    h("div",{class:"form-row"},
-      h("div",{class:"category-label-row"},
-        h("label",{class:"label"},"Category"),
-        state.catAutoSet ? h("span",{class:"auto-hint"},"✦ auto-suggested") : null,
-      ),
-      catSelect,
-    ),
-    h("div",{class:"form-row"},
-      h("label",{class:"label"},"Date"),
-      h("div",{class:"date-tabs"},
-        h("button",{class:"date-tab"+(state.dateMode==="today"?" active":""),onClick:()=>setState({dateMode:"today"})},"Today"),
-        h("button",{class:"date-tab"+(state.dateMode==="manual"?" active":""),onClick:()=>setState({dateMode:"manual"})},"Pick date"),
-      ),
-      state.dateMode==="manual" ? Object.assign(h("input",{class:"text-input",type:"date",value:state.manualDate,style:"margin-top:8px",
-        onChange:e=>state.manualDate=e.target.value})) : null,
-    ),
-    h("button",{
-      class:"submit-btn"+(state.justSaved?" saved":""),
-      disabled:state.submitting||!state.amount||!state.description.trim(),
-      onClick:handleAdd,
-    }, state.justSaved?"✓ Saved":state.submitting?"Saving…":`Log as ${state.user}`),
-  );
+  return ensureLogForm();
 }
 
 function renderHistory(partner) {
