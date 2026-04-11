@@ -46,7 +46,8 @@
     .date-tabs { display:flex; gap:8px; }
     .date-tab { flex:1; padding:9px; border:1px solid var(--border); border-radius:6px; background:transparent; color:var(--ink-light); font-size:14px; font-family:inherit; cursor:pointer; }
     .date-tab.active { background:var(--ink); color:#f5f0e8; border-color:var(--ink); }
-    .date-picker-wrap { display:none; margin-top:8px; }
+    .date-picker-wrap { margin-top:8px; visibility:hidden; height:0; overflow:hidden; }
+    .date-picker-wrap.open { visibility:visible; height:auto; overflow:visible; }
     .submit-btn { padding:15px; background:var(--ink); color:#f5f0e8; border:none; border-radius:8px; font-size:16px; font-family:inherit; cursor:pointer; letter-spacing:.04em; transition:background .2s; width:100%; }
     .submit-btn:disabled { opacity:.5; cursor:default; }
     .btn-disabled { opacity:.5; pointer-events:none; }
@@ -274,6 +275,7 @@ function buildPick(){
         ...PEOPLE.map(p=>mk("button",{cls:"pick-btn",onClick:()=>{ls.set("lb_user",p);S.user=p;renderRoot();load();startPoll();}},p))
       ),
       mk("button",{cls:"reset-btn",onClick:()=>{ls.del("lb_url");S.url="";S.setupStep=1;S.setupUrl="";renderRoot();}},"⚙ Reset connection"),
+      mk("button",{cls:"reset-btn",style:"margin-top:8px",onClick:()=>window.location.reload()},"↻ Reload app"),
     )
   );
 }
@@ -306,8 +308,8 @@ function buildApp(){
     onChange:e=>{logCat=e.target.value;catManual=true;catSelect.classList.remove("select-hi");autoHint.style.display="none";}
   },...CATS.map(c=>mk("option",{value:c},c)));
 
-  const todayBtn=mk("button",{cls:"date-tab active",onClick:()=>{logDateMode="today";todayBtn.className="date-tab active";manualBtn.className="date-tab";dateWrap.style.display="none";}}, "Today");
-  const manualBtn=mk("button",{cls:"date-tab",onClick:()=>{logDateMode="manual";todayBtn.className="date-tab";manualBtn.className="date-tab active";dateWrap.style.display="";}}, "Pick date");
+  const todayBtn=mk("button",{cls:"date-tab active",onClick:()=>{logDateMode="today";todayBtn.className="date-tab active";manualBtn.className="date-tab";dateWrap.classList.remove("open");}}, "Today");
+  const manualBtn=mk("button",{cls:"date-tab",onClick:()=>{logDateMode="manual";todayBtn.className="date-tab";manualBtn.className="date-tab active";dateWrap.classList.add("open");datePick.focus();}}, "Pick date");
   const datePick=mk("input",{cls:"text-input",type:"date",value:todayStr(),onChange:e=>logManualDate=e.target.value});
   const dateWrap=mk("div",{cls:"date-picker-wrap"},datePick);
   let logDateMode="today",logManualDate=todayStr();
@@ -326,7 +328,7 @@ function buildApp(){
     logAmt="";logDesc="";logCat=CATS[0];catManual=false;logDateMode="today";
     amtInput.value="";descInput.value="";
     catSelect.value=CATS[0];catSelect.classList.remove("select-hi");autoHint.style.display="none";
-    todayBtn.className="date-tab active";manualBtn.className="date-tab";dateWrap.style.display="none";
+    todayBtn.className="date-tab active";manualBtn.className="date-tab";dateWrap.classList.remove("open");
     saveBtn.className="submit-btn saved";saveBtn.textContent="✓ Saved";
     setTimeout(()=>{saveBtn.className="submit-btn btn-disabled";saveBtn.textContent=`Log as ${S.user}`;updateBtn();},2000);
   }});
