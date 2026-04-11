@@ -49,6 +49,7 @@
     .date-picker-wrap { display:none; margin-top:8px; }
     .submit-btn { padding:15px; background:var(--ink); color:#f5f0e8; border:none; border-radius:8px; font-size:16px; font-family:inherit; cursor:pointer; letter-spacing:.04em; transition:background .2s; width:100%; }
     .submit-btn:disabled { opacity:.5; cursor:default; }
+    .btn-disabled { opacity:.5; pointer-events:none; }
     .submit-btn.saved { background:var(--green); }
 
     .date-group { font-size:11px; text-transform:uppercase; letter-spacing:.12em; color:var(--ink-light); margin-top:16px; margin-bottom:6px; border-bottom:1px solid var(--border-d); padding-bottom:4px; }
@@ -291,14 +292,11 @@ function buildApp(){
   const descInput=mk("input",{cls:"text-input",type:"text",placeholder:"e.g. weekly shop, dinner…",
     onInput:e=>{
       logDesc=e.target.value; catManual=false; updateBtn();
-      clearTimeout(inferTimer);
-      if(e.target.value.trim().length>=3){
-        inferTimer=setTimeout(()=>{
-          const c=inferCat(S.memory,e.target.value);
-          if(c&&!catManual){logCat=c;catSelect.value=c;catSelect.classList.add("select-hi");autoHint.style.display="";}
-          else{catSelect.classList.remove("select-hi");autoHint.style.display="none";}
-        },300);
-      } else {catSelect.classList.remove("select-hi");autoHint.style.display="none";}
+    },
+    onBlur:e=>{
+      if(catManual||e.target.value.trim().length<3) return;
+      const c=inferCat(S.memory,e.target.value);
+      if(c){logCat=c;catSelect.value=c;catSelect.classList.add("select-hi");autoHint.style.display="";}
     }
   });
   const autoHint=mk("span",{cls:"auto-hint"},"✦ auto-suggested");
@@ -314,7 +312,7 @@ function buildApp(){
   const dateWrap=mk("div",{cls:"date-picker-wrap"},datePick);
   let logDateMode="today",logManualDate=todayStr();
 
-  const saveBtn=mk("button",{cls:"submit-btn",disabled:true,onClick:async()=>{
+  const saveBtn=mk("button",{cls:"submit-btn btn-disabled",onClick:async()=>{
     const amt=parseFloat(logAmt);
     if(!amt||amt<=0||!logDesc.trim())return;
     saveBtn.disabled=true;saveBtn.textContent="Saving…";
@@ -329,13 +327,14 @@ function buildApp(){
     amtInput.value="";descInput.value="";
     catSelect.value=CATS[0];catSelect.classList.remove("select-hi");autoHint.style.display="none";
     todayBtn.className="date-tab active";manualBtn.className="date-tab";dateWrap.style.display="none";
-    saveBtn.className="submit-btn saved";saveBtn.textContent="✓ Saved";saveBtn.disabled=true;
-    setTimeout(()=>{saveBtn.className="submit-btn";saveBtn.textContent=`Log as ${S.user}`;updateBtn();},2000);
+    saveBtn.className="submit-btn saved";saveBtn.textContent="✓ Saved";
+    setTimeout(()=>{saveBtn.className="submit-btn btn-disabled";saveBtn.textContent=`Log as ${S.user}`;updateBtn();},2000);
   }});
   saveBtn.textContent=`Log as ${S.user}`;
 
   function updateBtn(){
-    saveBtn.disabled=!(parseFloat(logAmt)>0&&logDesc.trim().length>0);
+    const ok=parseFloat(logAmt)>0&&logDesc.trim().length>0;
+    saveBtn.className="submit-btn"+(ok?"":" btn-disabled");
   }
 
   logForm=mk("div",{cls:"form"},
