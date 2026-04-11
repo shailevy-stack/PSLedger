@@ -306,10 +306,19 @@ function buildApp(){
     onChange:e=>{logCat=e.target.value;catManual=true;catSelect.classList.remove("select-hi");autoHint.style.display="none";}
   },...CATS.map(c=>mk("option",{value:c},c)));
 
-  const todayBtn=mk("button",{cls:"date-tab active",onClick:()=>{logDateMode="today";todayBtn.className="date-tab active";manualBtn.className="date-tab";datePick.value=todayStr();logManualDate=todayStr();datePick.readOnly=true;}}, "Today");
-  const manualBtn=mk("button",{cls:"date-tab",onClick:()=>{logDateMode="manual";todayBtn.className="date-tab";manualBtn.className="date-tab active";datePick.readOnly=false;datePick.focus();}}, "Pick date");
-  const datePick=mk("input",{cls:"text-input",type:"date",value:todayStr(),style:"margin-top:8px",onChange:e=>logManualDate=e.target.value});
-  datePick.readOnly=true;
+  const todayBtn=mk("button",{cls:"date-tab active",onClick:()=>{
+    logDateMode="today"; todayBtn.className="date-tab active"; manualBtn.className="date-tab";
+    logManualDate=todayStr();
+    dateDisplay.style.display=""; datePick.style.display="none";
+    dateDisplay.textContent=fmtDate(todayStr());
+  }}, "Today");
+  const manualBtn=mk("button",{cls:"date-tab",onClick:()=>{
+    logDateMode="manual"; todayBtn.className="date-tab"; manualBtn.className="date-tab active";
+    dateDisplay.style.display="none"; datePick.style.display="";
+    datePick.value=logManualDate; datePick.focus();
+  }}, "Pick date");
+  const dateDisplay=mk("div",{style:"margin-top:8px;font-size:15px;color:#8a7a5a;padding:4px 0;"},"Today");
+  const datePick=mk("input",{cls:"text-input",type:"date",value:todayStr(),style:"margin-top:8px;display:none;",onChange:e=>logManualDate=e.target.value});
   let logDateMode="today",logManualDate=todayStr();
 
   const saveBtn=mk("button",{cls:"submit-btn btn-disabled",onClick:async()=>{
@@ -326,7 +335,8 @@ function buildApp(){
     logAmt="";logDesc="";logCat=CATS[0];catManual=false;logDateMode="today";
     amtInput.value="";descInput.value="";
     catSelect.value=CATS[0];catSelect.classList.remove("select-hi");autoHint.style.display="none";
-    todayBtn.className="date-tab active";manualBtn.className="date-tab";datePick.value=todayStr();datePick.readOnly=true;
+    todayBtn.className="date-tab active";manualBtn.className="date-tab";
+    datePick.style.display="none";dateDisplay.style.display="";dateDisplay.textContent="Today";
     saveBtn.className="submit-btn saved";saveBtn.textContent="✓ Saved";
     setTimeout(()=>{saveBtn.className="submit-btn btn-disabled";saveBtn.textContent=`Log as ${S.user}`;updateBtn();},2000);
   }});
@@ -341,7 +351,7 @@ function buildApp(){
     mk("div",{cls:"form-row"},mk("label",{cls:"label"},"Amount"),mk("div",{cls:"amount-wrap"},mk("span",{cls:"amount-prefix"},"€"),amtInput)),
     mk("div",{cls:"form-row"},mk("label",{cls:"label"},"What for?"),descInput),
     mk("div",{cls:"form-row"},mk("div",{cls:"cat-label-row"},mk("label",{cls:"label"},"Category"),autoHint),catSelect),
-    mk("div",{cls:"form-row"},mk("label",{cls:"label"},"Date"),mk("div",{cls:"date-tabs"},todayBtn,manualBtn),datePick),
+    mk("div",{cls:"form-row"},mk("label",{cls:"label"},"Date"),mk("div",{cls:"date-tabs"},todayBtn,manualBtn),dateDisplay,datePick),
     saveBtn,
   );
 
