@@ -32,7 +32,7 @@
     .tab-panel { display:none; } .tab-panel.active { display:block; }
 
     .form { display:flex; flex-direction:column; gap:18px; }
-    .form-row { display:flex; flex-direction:column; gap:6px; }
+    .form-row { display:flex; flex-direction:column; gap:6px; overflow:hidden; }
     .label { font-size:12px; text-transform:uppercase; letter-spacing:.1em; color:var(--ink-light); }
     .amount-wrap { display:flex; align-items:baseline; gap:6px; border-bottom:2px solid var(--gold); padding:4px 0; }
     .amount-prefix { font-size:32px; font-family:'Georgia',serif; color:var(--ink); line-height:1; }
@@ -46,8 +46,9 @@
     .date-tabs { display:flex; gap:8px; }
     .date-tab { flex:1; padding:9px; border:1px solid var(--border); border-radius:6px; background:transparent; color:var(--ink-light); font-size:14px; font-family:inherit; cursor:pointer; }
     .date-tab.active { background:var(--ink); color:#f5f0e8; border-color:var(--ink); }
-    .date-picker-wrap { margin-top:8px; visibility:hidden; height:0; overflow:hidden; }
+    .date-picker-wrap { margin-top:8px; visibility:hidden; height:0; overflow:hidden; width:100%; }
     .date-picker-wrap.open { visibility:visible; height:auto; overflow:visible; }
+    .date-picker-wrap input { width:100%; max-width:100%; box-sizing:border-box; }
     .submit-btn { padding:15px; background:var(--ink); color:#f5f0e8; border:none; border-radius:8px; font-size:16px; font-family:inherit; cursor:pointer; letter-spacing:.04em; transition:background .2s; width:100%; }
     .submit-btn:disabled { opacity:.5; cursor:default; }
     .btn-disabled { opacity:.5; pointer-events:none; }
