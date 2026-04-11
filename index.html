@@ -179,6 +179,7 @@ let S={
   loading:true, loadErr:"", setupStep:1, setupUrl:"", setupErr:"", setupBusy:false,
 };
 let writeLock=false, inferTimer=null, pollTimer=null;
+let updateLogBtn = null; // set by buildApp, called after any write
 
 // ── Data ──────────────────────────────────────────────────────────────────────
 async function load(quiet=false){
@@ -198,6 +199,7 @@ async function freshWrite(fn){
     const next=fn(S.expenses, S.memory);
     S.expenses=next.expenses; S.memory=next.memory;
     refreshHistory(); refreshBalance(); refreshInsights();
+    if(updateLogBtn) updateLogBtn();
     await apiWrite(S.url,next);
   }catch(e){alert("Save failed: "+e.message);}
   writeLock=false;
@@ -351,6 +353,7 @@ function buildApp(){
     const ok=parseFloat(logAmt)>0&&logDesc.trim().length>0;
     saveBtn.className="submit-btn"+(ok?"":" btn-disabled");
   }
+  updateLogBtn = updateBtn;
 
   logForm=mk("div",{cls:"form"},
     mk("div",{cls:"form-row"},mk("label",{cls:"label"},"Amount"),mk("div",{cls:"amount-wrap"},mk("span",{cls:"amount-prefix"},"€"),amtInput)),
