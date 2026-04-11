@@ -309,17 +309,19 @@ function buildApp(){
   const todayBtn=mk("button",{cls:"date-tab active",onClick:()=>{
     logDateMode="today"; todayBtn.className="date-tab active"; manualBtn.className="date-tab";
     logManualDate=todayStr(); dateDisplay.textContent="Today";
+    updateBtn();
   }}, "Today");
 
-  // Wrap "Pick date" in a relative container with an invisible date input overlaid on top
   const datePick=mk("input",{type:"date",value:todayStr(),
     style:"position:absolute;inset:0;width:100%;height:100%;opacity:0;cursor:pointer;",
     onChange:e=>{
+      if(!e.target.value) return;
       logManualDate=e.target.value;
       logDateMode="manual";
       todayBtn.className="date-tab";
       manualBtn.className="date-tab active";
       dateDisplay.textContent=fmtDate(e.target.value);
+      updateBtn();
     }
   });
   const manualBtn=mk("div",{cls:"date-tab",style:"position:relative;cursor:pointer;text-align:center;"},"Pick date",datePick);
@@ -413,6 +415,7 @@ function refreshHistory(){
   const grouped={};
   S.expenses.forEach(e=>{if(!grouped[e.date])grouped[e.date]=[];grouped[e.date].push(e);});
   Object.entries(grouped).sort(([a],[b])=>b.localeCompare(a)).forEach(([date,items])=>{
+    items.sort((a,b)=>b.createdAt.localeCompare(a.createdAt));
     hb.append(mk("div",{cls:"date-group"},fmtDate(date)));
     items.forEach(e=>{
       hb.append(mk("div",{cls:"expense-row "+(e.person===S.user?"mine":"theirs")},
@@ -455,6 +458,18 @@ function refreshBalance(){
   );
   if(Math.abs(bal[S.user])>.01)
     bp.append(mk("div",{cls:"verdict"},bal[S.user]>0?`${partner} owes you €${bal[S.user].toFixed(2)}`:`You owe ${partner} €${Math.abs(bal[S.user]).toFixed(2)}`));
+
+  bp.append(mk("div",{style:"margin-top:32px;padding-top:16px;border-top:1px solid var(--border-d);"},
+    mk("button",{
+      style:"background:none;border:1px solid #ccc;color:#bbb;border-radius:6px;padding:6px 14px;font-size:12px;font-family:inherit;cursor:pointer;",
+      onClick:async()=>{
+        if(!confirm("Reset all expenses and data? This cannot be undone.")) return;
+        await apiWrite(S.url,{expenses:[],memory:{}});
+        S.expenses=[]; S.memory={};
+        refreshHistory(); refreshBalance(); refreshInsights();
+      }
+    },"⚠ Reset all data")
+  ));
 }
 
 function refreshInsights(){
