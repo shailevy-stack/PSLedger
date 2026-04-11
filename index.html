@@ -1,0 +1,764 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+  <meta name="apple-mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+  <meta name="apple-mobile-web-app-title" content="Ledger" />
+  <meta name="theme-color" content="#2c2416" />
+  <title>Shared Ledger</title>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    :root {
+      --ink: #2c2416;
+      --ink-light: #8a7a5a;
+      --gold: #c9a84c;
+      --gold-light: #fffef5;
+      --blue: #8aafc9;
+      --paper: #faf8f3;
+      --paper-card: #fffdf7;
+      --border: #ddd5c0;
+      --border-dark: #e8dfc8;
+      --green: #2d8a4e;
+      --red: #b94040;
+      --safe-top: env(safe-area-inset-top, 0px);
+      --safe-bottom: env(safe-area-inset-bottom, 0px);
+    }
+
+    html, body {
+      height: 100%;
+      background: var(--paper);
+      font-family: 'Georgia', 'Times New Roman', serif;
+      color: var(--ink);
+      -webkit-tap-highlight-color: transparent;
+      overscroll-behavior: none;
+    }
+
+    #root {
+      max-width: 480px;
+      margin: 0 auto;
+      min-height: 100%;
+      display: flex;
+      flex-direction: column;
+    }
+
+    /* ── Header ── */
+    .header {
+      background: var(--ink);
+      color: #f5f0e8;
+      padding: calc(14px + var(--safe-top)) 18px 14px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      position: sticky;
+      top: 0;
+      z-index: 10;
+    }
+    .header-left { display: flex; align-items: center; gap: 10px; }
+    .header-title { font-size: 18px; font-weight: normal; letter-spacing: 0.04em; }
+    .user-badge {
+      background: rgba(255,255,255,0.12);
+      border: none;
+      color: #f5f0e8;
+      border-radius: 20px;
+      padding: 5px 12px;
+      font-size: 13px;
+      cursor: pointer;
+      font-family: inherit;
+    }
+
+    /* ── Nav ── */
+    .nav {
+      display: flex;
+      background: #3d3020;
+      border-bottom: 1px solid var(--ink);
+      position: sticky;
+      top: calc(50px + var(--safe-top));
+      z-index: 9;
+    }
+    .nav-btn {
+      flex: 1;
+      background: none;
+      border: none;
+      color: #c4b89a;
+      padding: 11px 0;
+      font-size: 13px;
+      cursor: pointer;
+      font-family: inherit;
+      letter-spacing: 0.02em;
+      border-bottom: 2px solid transparent;
+    }
+    .nav-btn.active {
+      color: #f5f0e8;
+      background: var(--ink);
+      border-bottom: 2px solid var(--gold);
+    }
+
+    /* ── Body ── */
+    .body {
+      padding: 20px 18px calc(20px + var(--safe-bottom));
+      flex: 1;
+    }
+
+    /* ── Forms ── */
+    .form { display: flex; flex-direction: column; gap: 18px; }
+    .form-row { display: flex; flex-direction: column; gap: 6px; }
+    .label {
+      font-size: 12px;
+      text-transform: uppercase;
+      letter-spacing: 0.1em;
+      color: var(--ink-light);
+    }
+    .amount-input {
+      font-size: 32px;
+      font-family: 'Georgia', serif;
+      border: none;
+      border-bottom: 2px solid var(--gold);
+      background: transparent;
+      color: var(--ink);
+      padding: 4px 0;
+      outline: none;
+      width: 100%;
+    }
+    .text-input {
+      font-size: 16px;
+      font-family: 'Georgia', serif;
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      background: var(--paper-card);
+      color: var(--ink);
+      padding: 10px 12px;
+      outline: none;
+      width: 100%;
+    }
+    .text-input:focus { border-color: var(--gold); }
+    select.text-input { appearance: auto; }
+    .category-label-row { display: flex; align-items: center; justify-content: space-between; }
+    .auto-hint { font-size: 11px; color: var(--gold); font-style: italic; }
+    .select-highlighted { border-color: var(--gold); background: var(--gold-light); }
+    .date-tabs { display: flex; gap: 8px; }
+    .date-tab {
+      flex: 1; padding: 9px;
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      background: transparent;
+      color: var(--ink-light);
+      font-size: 14px;
+      font-family: inherit;
+      cursor: pointer;
+    }
+    .date-tab.active { background: var(--ink); color: #f5f0e8; border-color: var(--ink); }
+    .submit-btn {
+      margin-top: 8px; padding: 15px;
+      background: var(--ink); color: #f5f0e8;
+      border: none; border-radius: 8px;
+      font-size: 16px; font-family: inherit;
+      cursor: pointer; letter-spacing: 0.04em;
+      transition: background 0.2s, opacity 0.2s;
+    }
+    .submit-btn:disabled { opacity: 0.5; }
+    .submit-btn.saved { background: var(--green); }
+
+    /* ── History ── */
+    .date-group {
+      font-size: 11px; text-transform: uppercase;
+      letter-spacing: 0.12em; color: var(--ink-light);
+      margin-top: 16px; margin-bottom: 6px;
+      border-bottom: 1px solid var(--border-dark);
+      padding-bottom: 4px;
+    }
+    .expense-row {
+      display: flex; align-items: center;
+      justify-content: space-between;
+      padding: 11px 12px; border-radius: 8px;
+      margin-bottom: 6px;
+      background: var(--paper-card);
+      border: 1px solid var(--border-dark);
+    }
+    .expense-row.mine { border-left: 3px solid var(--gold); }
+    .expense-row.theirs { border-left: 3px solid var(--blue); }
+    .expense-left { display: flex; align-items: center; gap: 10px; }
+    .expense-cat { font-size: 22px; }
+    .expense-desc { font-size: 15px; color: var(--ink); }
+    .expense-person { font-size: 12px; color: var(--ink-light); margin-top: 2px; }
+    .expense-right { display: flex; align-items: center; gap: 8px; }
+    .expense-amt { font-size: 17px; color: var(--ink); font-weight: bold; }
+    .delete-btn {
+      background: none; border: none;
+      color: #ccc; font-size: 20px;
+      cursor: pointer; line-height: 1; padding: 2px;
+    }
+    .sync-row { display: flex; align-items: center; gap: 10px; margin-top: 16px; }
+    .sync-btn {
+      background: none; border: 1px solid var(--border);
+      border-radius: 6px; padding: 7px 14px;
+      color: var(--ink-light); font-size: 13px;
+      font-family: inherit; cursor: pointer;
+    }
+    .sync-note { font-size: 12px; color: #bbb; font-style: italic; }
+
+    /* ── Balance ── */
+    .balance-total {
+      background: var(--ink); color: #f5f0e8;
+      border-radius: 10px; padding: 20px;
+      margin-bottom: 16px; text-align: center;
+    }
+    .balance-total-label { font-size: 12px; text-transform: uppercase; letter-spacing: 0.1em; color: #c4b89a; }
+    .balance-total-amt { font-size: 38px; margin: 6px 0 2px; }
+    .balance-fair { font-size: 13px; color: #c4b89a; }
+    .balance-card {
+      background: var(--paper-card); border: 1px solid var(--border-dark);
+      border-radius: 10px; padding: 16px; margin-bottom: 10px;
+    }
+    .balance-card.me { border-color: var(--gold); background: var(--gold-light); }
+    .balance-name { font-size: 14px; text-transform: uppercase; letter-spacing: 0.08em; color: var(--ink-light); }
+    .balance-spent { font-size: 22px; color: var(--ink); margin: 4px 0 6px; }
+    .balance-status { font-size: 15px; font-style: italic; }
+    .verdict {
+      text-align: center; background: #f0ede4;
+      border: 1px dashed var(--gold); border-radius: 8px;
+      padding: 14px; color: var(--ink);
+      font-size: 16px; font-style: italic;
+      margin-top: 6px; margin-bottom: 16px;
+    }
+
+    /* ── Insights ── */
+    .range-tabs { display: flex; gap: 6px; margin-bottom: 16px; }
+    .range-tab {
+      flex: 1; padding: 8px 0;
+      border: 1px solid var(--border); border-radius: 6px;
+      background: transparent; color: var(--ink-light);
+      font-size: 13px; font-family: inherit; cursor: pointer;
+    }
+    .range-tab.active { background: var(--ink); color: #f5f0e8; border-color: var(--ink); }
+    .insights-period { font-size: 12px; text-transform: uppercase; letter-spacing: 0.1em; color: var(--ink-light); margin-bottom: 14px; }
+    .insight-row { margin-bottom: 18px; }
+    .insight-top { display: flex; justify-content: space-between; align-items: center; margin-bottom: 5px; }
+    .insight-label { display: flex; align-items: center; gap: 7px; }
+    .insight-emoji { font-size: 18px; }
+    .insight-name { font-size: 15px; color: var(--ink); }
+    .insight-amt-block { display: flex; align-items: baseline; gap: 6px; }
+    .insight-amt { font-size: 15px; color: var(--ink); font-weight: bold; }
+    .insight-pct { font-size: 12px; color: #aaa; }
+    .bar-track { height: 8px; background: #ede8dc; border-radius: 4px; display: flex; overflow: hidden; margin-bottom: 5px; }
+    .bar-segment { height: 100%; transition: width 0.4s ease; }
+    .insight-person-row { display: flex; gap: 12px; }
+    .insight-person-chip { font-size: 12px; font-style: italic; }
+    .legend { display: flex; gap: 16px; margin-top: 20px; padding-top: 14px; border-top: 1px solid var(--border-dark); }
+    .legend-item { display: flex; align-items: center; gap: 6px; font-size: 12px; color: var(--ink-light); }
+    .legend-dot { width: 10px; height: 10px; border-radius: 50%; display: inline-block; }
+
+    /* ── Pick / Setup screens ── */
+    .screen {
+      min-height: 100vh; background: var(--paper);
+      display: flex; align-items: center; justify-content: center;
+      padding: 20px;
+    }
+    .card {
+      background: var(--paper-card); border: 1px solid var(--border-dark);
+      border-radius: 16px; padding: 40px 32px;
+      width: 100%; max-width: 340px;
+      box-shadow: 0 4px 24px rgba(44,36,22,0.08);
+    }
+    .card-center { text-align: center; }
+    .big-emoji { font-size: 48px; margin-bottom: 12px; }
+    .card-title { font-size: 26px; color: var(--ink); margin: 0 0 8px; font-weight: normal; }
+    .card-sub { font-size: 15px; color: var(--ink-light); margin: 0 0 28px; }
+    .pick-buttons { display: flex; flex-direction: column; gap: 12px; }
+    .pick-btn {
+      padding: 14px; background: var(--ink); color: #f5f0e8;
+      border: none; border-radius: 8px; font-size: 17px;
+      font-family: inherit; cursor: pointer;
+    }
+    .setup-step { display: flex; gap: 12px; margin-bottom: 16px; }
+    .step-num {
+      width: 24px; height: 24px; border-radius: 50%; flex-shrink: 0;
+      display: flex; align-items: center; justify-content: center;
+      font-size: 12px; font-weight: bold; margin-top: 2px;
+    }
+    .step-title { font-size: 13px; font-weight: bold; color: var(--ink); margin-bottom: 3px; }
+    .step-body { font-size: 12px; color: var(--ink-light); line-height: 1.6; }
+    .step-body a { color: var(--gold); }
+    .step-body code { font-size: 11px; background: #f0ede4; padding: 1px 4px; border-radius: 3px; }
+    .error-msg { font-size: 12px; color: var(--red); margin-top: 8px; line-height: 1.5; }
+    .reset-btn {
+      margin-top: 20px; background: none;
+      border: 1px solid var(--border); color: var(--ink-light);
+      border-radius: 6px; padding: 6px 14px;
+      cursor: pointer; font-family: inherit; font-size: 12px;
+    }
+    .empty { text-align: center; color: #aaa; margin-top: 40px; font-style: italic; }
+    .error-text { text-align: center; color: var(--red); margin-top: 40px; font-style: italic; }
+    .hidden { display: none; }
+    kbd { font-size: 11px; background: #f0ede4; padding: 1px 5px; border-radius: 3px; font-family: inherit; }
+  </style>
+</head>
+<body>
+<div id="root"></div>
+
+<script>
+// ── Config ────────────────────────────────────────────────────────────────────
+const PEOPLE = ["Shai", "Polina"];
+const CATEGORIES = [
+  "🛒 Groceries","🍽️ Eating out","🏠 Home","🚌 Transport",
+  "💊 Health","👕 Clothing","🎬 Entertainment","✈️ Travel","📦 Other"
+];
+
+// ── Storage ───────────────────────────────────────────────────────────────────
+const ls = { get: k => localStorage.getItem(k)||"", set: (k,v) => localStorage.setItem(k,v), del: k => localStorage.removeItem(k) };
+
+// ── API ───────────────────────────────────────────────────────────────────────
+async function apiRead(url) {
+  const r = await fetch(url + "?action=read");
+  if (!r.ok) throw new Error("HTTP " + r.status);
+  const j = await r.json();
+  if (j.error) throw new Error(j.error);
+  return j;
+}
+async function apiWrite(url, data) {
+  const r = await fetch(url, {
+    method: "POST",
+    headers: { "Content-Type": "text/plain" },
+    body: JSON.stringify({ action: "write", data }),
+  });
+  if (!r.ok) throw new Error("HTTP " + r.status);
+  const j = await r.json();
+  if (j.error) throw new Error(j.error);
+}
+
+// ── Category learning ─────────────────────────────────────────────────────────
+function tokenize(t) { return t.toLowerCase().replace(/[^a-zäöüßа-яёà-ž\s]/g,"").split(/\s+/).filter(w=>w.length>2); }
+function inferCat(mem, desc) {
+  if (!desc.trim()||!mem||!Object.keys(mem).length) return null;
+  const words = tokenize(desc); if (!words.length) return null;
+  const scores = {}; CATEGORIES.forEach(c => scores[c]=0);
+  words.forEach(w => { if (mem[w]) Object.entries(mem[w]).forEach(([c,n]) => { scores[c]=(scores[c]||0)+n; }); });
+  const best = Object.entries(scores).sort((a,b)=>b[1]-a[1])[0];
+  return best&&best[1]>0 ? best[0] : null;
+}
+function learn(mem, desc, cat) {
+  const u = {...mem};
+  tokenize(desc).forEach(w => { if (!u[w]) u[w]={}; u[w][cat]=(u[w][cat]||0)+1; });
+  return u;
+}
+
+// ── Helpers ───────────────────────────────────────────────────────────────────
+function todayStr() { return new Date().toISOString().slice(0,10); }
+function fmtDate(iso) {
+  const d = new Date(iso+"T12:00:00"), today=new Date(), yest=new Date(today);
+  yest.setDate(today.getDate()-1);
+  if (d.toDateString()===today.toDateString()) return "Today";
+  if (d.toDateString()===yest.toDateString()) return "Yesterday";
+  return d.toLocaleDateString("en-GB",{day:"numeric",month:"short"});
+}
+function el(id) { return document.getElementById(id); }
+function h(tag, attrs={}, ...children) {
+  const e = document.createElement(tag);
+  Object.entries(attrs).forEach(([k,v]) => {
+    if (k==="class") e.className=v;
+    else if (k.startsWith("on")) e.addEventListener(k.slice(2).toLowerCase(),v);
+    else e.setAttribute(k,v);
+  });
+  children.forEach(c => { if (c==null||c===false) return; e.append(typeof c==="string"?document.createTextNode(c):c); });
+  return e;
+}
+
+// ── State ─────────────────────────────────────────────────────────────────────
+let state = {
+  scriptUrl: ls.get("lb_url"),
+  user: ls.get("lb_user"),
+  expenses: [],
+  memory: {},
+  view: "log",
+  loading: true,
+  loadError: "",
+  insightsRange: "month",
+  // form
+  amount: "", description: "", category: CATEGORIES[0],
+  catAutoSet: false, catManual: false,
+  dateMode: "today", manualDate: todayStr(),
+  submitting: false, justSaved: false,
+  setupStep: 1,
+  scriptUrlInput: "",
+  setupError: "", setupTesting: false,
+};
+let writeLock = false;
+let inferTimer = null;
+let pollTimer = null;
+
+function setState(patch) { Object.assign(state, patch); render(); }
+
+// ── Data ops ──────────────────────────────────────────────────────────────────
+async function loadData(quiet=false) {
+  if (!state.scriptUrl) return;
+  if (!quiet) setState({loading:true,loadError:""});
+  try {
+    const rec = await apiRead(state.scriptUrl);
+    const expenses = Array.isArray(rec.expenses) ? rec.expenses : [];
+    const memory = (rec.memory&&typeof rec.memory==="object") ? rec.memory : {};
+    setState({expenses, memory, loading:false, loadError:""});
+  } catch(e) {
+    setState({loading:false, loadError: e.message});
+  }
+}
+
+async function withFreshWrite(mutateFn) {
+  if (writeLock) return;
+  writeLock = true;
+  try {
+    const rec = await apiRead(state.scriptUrl);
+    const exps = Array.isArray(rec.expenses) ? rec.expenses : [];
+    const mem = (rec.memory&&typeof rec.memory==="object") ? rec.memory : {};
+    const next = mutateFn(exps, mem);
+    await apiWrite(state.scriptUrl, next);
+    setState({expenses: next.expenses, memory: next.memory});
+  } catch(e) { alert("Save failed: "+e.message); }
+  writeLock = false;
+}
+
+async function handleAdd() {
+  const amt = parseFloat(state.amount);
+  if (!amt||amt<=0||!state.description.trim()) return;
+  setState({submitting:true});
+  const entry = {
+    id: Date.now().toString(), person: state.user, amount: amt,
+    description: state.description.trim(), category: state.category,
+    date: state.dateMode==="today" ? todayStr() : state.manualDate,
+    createdAt: new Date().toISOString(),
+  };
+  await withFreshWrite((exps,mem) => ({
+    expenses: [...exps,entry].sort((a,b)=>b.date.localeCompare(a.date)),
+    memory: learn(mem, state.description, state.category),
+  }));
+  setState({amount:"",description:"",category:CATEGORIES[0],catAutoSet:false,catManual:false,dateMode:"today",submitting:false,justSaved:true});
+  setTimeout(()=>setState({justSaved:false}),2000);
+}
+
+async function handleDelete(id) {
+  await withFreshWrite((exps,mem)=>({expenses:exps.filter(e=>e.id!==id),memory:mem}));
+}
+
+async function handleConnect() {
+  const url = state.scriptUrlInput.trim();
+  if (!url) return;
+  setState({setupTesting:true,setupError:""});
+  try {
+    await apiRead(url);
+    ls.set("lb_url",url);
+    setState({scriptUrl:url,setupTesting:false,setupError:""});
+    startPoll();
+    loadData();
+  } catch(e) {
+    setState({setupTesting:false,setupError:"Could not connect: "+e.message+". Make sure you deployed as 'Anyone'."});
+  }
+}
+
+function startPoll() {
+  if (pollTimer) clearInterval(pollTimer);
+  pollTimer = setInterval(()=>loadData(true), 20000);
+}
+
+// ── Render ────────────────────────────────────────────────────────────────────
+function render() {
+  const root = el("root");
+  root.innerHTML = "";
+
+  if (!state.scriptUrl) { root.append(renderSetup()); return; }
+  if (!state.user) { root.append(renderPick()); return; }
+  root.append(renderApp());
+}
+
+// ── Setup screen ──────────────────────────────────────────────────────────────
+function renderSetup() {
+  const steps = [
+    { title:"Create the spreadsheet", body: `Go to <a href="https://sheets.new" target="_blank">sheets.new</a>. A blank Google Sheet opens — name it anything.` },
+    { title:"Open Apps Script", body: `In the Sheet menu: <kbd>Extensions → Apps Script</kbd>. A code editor opens in a new tab.` },
+    { title:"Paste the server code", body: `Delete all existing code in the editor. Paste in the <code>apps-script.js</code> code (from Claude). Save with <kbd>Ctrl+S</kbd>.` },
+    { title:"Deploy", body: `Click <kbd>Deploy → New deployment</kbd>. Type: Web app. Execute as: <b>Me</b>. Who has access: <b>Anyone</b>. Click Deploy, authorise, copy the Web app URL.` },
+  ];
+
+  const stepEls = steps.map((s,i) => {
+    const n = i+1;
+    const done = state.setupStep > n;
+    const active = state.setupStep === n;
+    const stepEl = h("div",{class:"setup-step",style:`opacity:${state.setupStep<n?0.4:1}`},
+      h("div",{class:"step-num",style:`background:${done?"#2d8a4e":active?"#2c2416":"#ddd5c0"};color:${active||done?"#f5f0e8":"#8a7a5a"}`}, done?"✓":String(n)),
+      h("div",{},
+        h("div",{class:"step-title"},s.title),
+        Object.assign(h("div",{class:"step-body"}),{innerHTML:s.body})
+      )
+    );
+    return stepEl;
+  });
+
+  const nextBtn = state.setupStep < 4
+    ? h("button",{class:"submit-btn",style:"width:100%;margin-top:8px",onClick:()=>setState({setupStep:state.setupStep+1})},"Done, next step →")
+    : null;
+
+  const urlField = state.setupStep===4 ? h("div",{style:"margin-top:8px"},
+    h("div",{class:"label",style:"margin-bottom:6px"},"Web app URL"),
+    Object.assign(h("input",{
+      class:"text-input",type:"text",placeholder:"https://script.google.com/macros/s/...",
+      value:state.scriptUrlInput,style:"font-size:13px",
+      onInput: e=>setState({scriptUrlInput:e.target.value}),
+    })),
+    state.setupError ? h("div",{class:"error-msg"},state.setupError) : null,
+    h("button",{
+      class:"submit-btn",style:`width:100%;margin-top:12px;opacity:${!state.scriptUrlInput||state.setupTesting?0.5:1}`,
+      onClick: handleConnect,
+    }, state.setupTesting?"Connecting…":"Connect & start"),
+  ) : null;
+
+  return h("div",{class:"screen"},
+    h("div",{class:"card"},
+      h("div",{class:"card-center"},
+        h("div",{class:"big-emoji"},"📒"),
+        h("h1",{class:"card-title"},"Shared Ledger"),
+        h("p",{style:"font-size:13px;color:#8a7a5a;margin-bottom:20px"},"One-time setup — about 5 minutes"),
+      ),
+      ...stepEls,
+      nextBtn,
+      urlField,
+    )
+  );
+}
+
+// ── Pick screen ───────────────────────────────────────────────────────────────
+function renderPick() {
+  return h("div",{class:"screen"},
+    h("div",{class:"card card-center"},
+      h("div",{class:"big-emoji"},"📒"),
+      h("h1",{class:"card-title"},"Shared Ledger"),
+      h("p",{class:"card-sub"},"Who are you?"),
+      h("div",{class:"pick-buttons"},
+        ...PEOPLE.map(p=>h("button",{class:"pick-btn",onClick:()=>{ls.set("lb_user",p);setState({user:p});}},p))
+      ),
+      h("button",{class:"reset-btn",onClick:()=>{ls.del("lb_url");setState({scriptUrl:"",setupStep:1});}}, "⚙ Reset connection"),
+    )
+  );
+}
+
+// ── Main app ──────────────────────────────────────────────────────────────────
+function renderApp() {
+  const partner = PEOPLE.find(p=>p!==state.user);
+  const totals = PEOPLE.reduce((acc,p)=>{acc[p]=state.expenses.filter(e=>e.person===p).reduce((s,e)=>s+e.amount,0);return acc;},{});
+  const grandTotal = Object.values(totals).reduce((s,v)=>s+v,0);
+  const fairShare = grandTotal/2;
+  const balances = PEOPLE.reduce((acc,p)=>{acc[p]=totals[p]-fairShare;return acc;},{});
+
+  const header = h("div",{class:"header"},
+    h("div",{class:"header-left"},
+      h("span",{style:"font-size:20px"},"📒"),
+      h("span",{class:"header-title"},"Shared Ledger"),
+    ),
+    h("button",{class:"user-badge",onClick:()=>{ls.del("lb_user");setState({user:""});}},state.user+" ↩"),
+  );
+
+  const nav = h("div",{class:"nav"},
+    ...[["log","＋ Log"],["history","History"],["balance","Balance"],["insights","Insights"]].map(([v,l])=>
+      h("button",{class:"nav-btn"+(state.view===v?" active":""),onClick:()=>setState({view:v})},l)
+    )
+  );
+
+  let content;
+  if (state.view==="log") content = renderLog();
+  else if (state.view==="history") content = renderHistory(partner);
+  else if (state.view==="balance") content = renderBalance(totals,grandTotal,fairShare,balances,partner);
+  else content = renderInsights();
+
+  return h("div",{id:"app"},header,nav,h("div",{class:"body"},content));
+}
+
+function renderLog() {
+  // Category inference on description change
+  function onDescChange(e) {
+    const val = e.target.value;
+    state.description = val;
+    state.catManual = false;
+    clearTimeout(inferTimer);
+    if (val.trim().length>=3) {
+      inferTimer = setTimeout(()=>{
+        const cat = inferCat(state.memory,val);
+        if (cat) setState({category:cat,catAutoSet:true});
+        else setState({catAutoSet:false});
+      },300);
+    } else {
+      setState({catAutoSet:false});
+    }
+  }
+
+  const catSelect = Object.assign(
+    h("select",{
+      class:"text-input"+(state.catAutoSet?" select-highlighted":""),
+      onChange:e=>{setState({category:e.target.value,catManual:true,catAutoSet:false});}
+    }, ...CATEGORIES.map(c=>Object.assign(h("option",{value:c},c),{selected:c===state.category}))),
+  );
+
+  return h("div",{class:"form"},
+    h("div",{class:"form-row"},
+      h("label",{class:"label"},"Amount (€)"),
+      Object.assign(h("input",{class:"amount-input",type:"number",placeholder:"0.00",inputmode:"decimal",value:state.amount,
+        onInput:e=>state.amount=e.target.value})),
+    ),
+    h("div",{class:"form-row"},
+      h("label",{class:"label"},"What for?"),
+      Object.assign(h("input",{class:"text-input",type:"text",placeholder:"e.g. weekly shop, dinner…",value:state.description,
+        onInput:onDescChange})),
+    ),
+    h("div",{class:"form-row"},
+      h("div",{class:"category-label-row"},
+        h("label",{class:"label"},"Category"),
+        state.catAutoSet ? h("span",{class:"auto-hint"},"✦ auto-suggested") : null,
+      ),
+      catSelect,
+    ),
+    h("div",{class:"form-row"},
+      h("label",{class:"label"},"Date"),
+      h("div",{class:"date-tabs"},
+        h("button",{class:"date-tab"+(state.dateMode==="today"?" active":""),onClick:()=>setState({dateMode:"today"})},"Today"),
+        h("button",{class:"date-tab"+(state.dateMode==="manual"?" active":""),onClick:()=>setState({dateMode:"manual"})},"Pick date"),
+      ),
+      state.dateMode==="manual" ? Object.assign(h("input",{class:"text-input",type:"date",value:state.manualDate,style:"margin-top:8px",
+        onChange:e=>state.manualDate=e.target.value})) : null,
+    ),
+    h("button",{
+      class:"submit-btn"+(state.justSaved?" saved":""),
+      disabled:state.submitting||!state.amount||!state.description.trim(),
+      onClick:handleAdd,
+    }, state.justSaved?"✓ Saved":state.submitting?"Saving…":`Log as ${state.user}`),
+  );
+}
+
+function renderHistory(partner) {
+  if (state.loading) return h("p",{class:"empty"},"Loading…");
+  if (state.loadError) return h("p",{class:"error-text"},state.loadError);
+  if (!state.expenses.length) return h("p",{class:"empty"},"No expenses yet.");
+
+  const grouped = {};
+  state.expenses.forEach(e=>{ if(!grouped[e.date]) grouped[e.date]=[]; grouped[e.date].push(e); });
+
+  const rows = Object.entries(grouped).sort(([a],[b])=>b.localeCompare(a)).flatMap(([date,items])=>[
+    h("div",{class:"date-group"},fmtDate(date)),
+    ...items.map(e=>
+      h("div",{class:"expense-row "+(e.person===state.user?"mine":"theirs")},
+        h("div",{class:"expense-left"},
+          h("span",{class:"expense-cat"},e.category.split(" ")[0]),
+          h("div",{},
+            h("div",{class:"expense-desc"},e.description),
+            h("div",{class:"expense-person"},e.person===state.user?"You":e.person),
+          ),
+        ),
+        h("div",{class:"expense-right"},
+          h("span",{class:"expense-amt"},"€"+e.amount.toFixed(2)),
+          e.person===state.user ? h("button",{class:"delete-btn",onClick:()=>handleDelete(e.id)},"×") : null,
+        ),
+      )
+    ),
+  ]);
+
+  const syncRow = h("div",{class:"sync-row"},
+    h("button",{class:"sync-btn",onClick:()=>loadData(true)},"↻ Refresh"),
+    h("span",{class:"sync-note"},"Auto-refreshes every 20s"),
+  );
+
+  return h("div",{},...rows,syncRow);
+}
+
+function renderBalance(totals,grandTotal,fairShare,balances,partner) {
+  const cards = PEOPLE.map(p=>{
+    const bal=balances[p],isMe=p===state.user;
+    return h("div",{class:"balance-card"+(isMe?" me":"")},
+      h("div",{class:"balance-name"},isMe?`${p} (you)`:p),
+      h("div",{class:"balance-spent"},"€"+totals[p].toFixed(2)),
+      h("div",{class:"balance-status",style:`color:${bal>0?"#2d8a4e":bal<0?"#b94040":"#888"}`},
+        Math.abs(bal)<0.01?"Even ✓":bal>0?`+€${bal.toFixed(2)} to receive`:`-€${Math.abs(bal).toFixed(2)} to contribute`
+      ),
+    );
+  });
+
+  const verdict = Math.abs(balances[state.user])>0.01
+    ? h("div",{class:"verdict"},
+        balances[state.user]>0
+          ? `${partner} owes you €${balances[state.user].toFixed(2)}`
+          : `You owe ${partner} €${Math.abs(balances[state.user]).toFixed(2)}`)
+    : null;
+
+  return h("div",{},
+    h("div",{class:"balance-total"},
+      h("div",{class:"balance-total-label"},"Total pool spent"),
+      h("div",{class:"balance-total-amt"},"€"+grandTotal.toFixed(2)),
+      h("div",{class:"balance-fair"},"Fair share: €"+fairShare.toFixed(2)+" each"),
+    ),
+    ...cards,
+    verdict,
+  );
+}
+
+function renderInsights() {
+  const now = new Date();
+  const filtered = state.expenses.filter(e=>{
+    const d=new Date(e.date+"T12:00:00");
+    if (state.insightsRange==="month") return d.getFullYear()===now.getFullYear()&&d.getMonth()===now.getMonth();
+    if (state.insightsRange==="30days") return (now-d)/86400000<=30;
+    return true;
+  });
+  const bycat={};
+  CATEGORIES.forEach(c=>{bycat[c]={total:0,byPerson:{}};PEOPLE.forEach(p=>{bycat[c].byPerson[p]=0;});});
+  filtered.forEach(e=>{bycat[e.category].total+=e.amount;bycat[e.category].byPerson[e.person]+=e.amount;});
+  const ranked=Object.entries(bycat).filter(([,v])=>v.total>0).sort((a,b)=>b[1].total-a[1].total);
+  const grandCat=ranked.reduce((s,[,v])=>s+v.total,0);
+  const maxTotal=ranked.length?ranked[0][1].total:1;
+  const rangeLabel=state.insightsRange==="month"?now.toLocaleDateString("en-GB",{month:"long",year:"numeric"}):state.insightsRange==="30days"?"Last 30 days":"All time";
+
+  const rangeTabs = h("div",{class:"range-tabs"},
+    ...[["month","This month"],["30days","30 days"],["all","All time"]].map(([r,l])=>
+      h("button",{class:"range-tab"+(state.insightsRange===r?" active":""),onClick:()=>setState({insightsRange:r})},l)
+    )
+  );
+
+  if (!ranked.length) return h("div",{},rangeTabs,h("p",{class:"empty"},"No expenses in this period yet."));
+
+  const rows = ranked.map(([cat,data])=>{
+    const emoji=cat.split(" ")[0], name=cat.split(" ").slice(1).join(" ");
+    const pct=((data.total/grandCat)*100).toFixed(0);
+    const chips = PEOPLE.map((p,i)=>data.byPerson[p]>0
+      ? h("span",{class:"insight-person-chip",style:`color:${i===0?"#a07830":"#4a7a9b"}`},`${p===state.user?"You":p} €${data.byPerson[p].toFixed(2)}`)
+      : null).filter(Boolean);
+    const bars = PEOPLE.map((p,i)=>{
+      const w=data.byPerson[p]>0?(data.byPerson[p]/maxTotal)*100:0;
+      return w>0?h("div",{class:"bar-segment",style:`width:${w}%;background:${i===0?"#c9a84c":"#8aafc9"};border-radius:${i===0?"3px 0 0 3px":"0 3px 3px 0"}`}):null;
+    }).filter(Boolean);
+    return h("div",{class:"insight-row"},
+      h("div",{class:"insight-top"},
+        h("div",{class:"insight-label"},h("span",{class:"insight-emoji"},emoji),h("span",{class:"insight-name"},name)),
+        h("div",{class:"insight-amt-block"},h("span",{class:"insight-amt"},"€"+data.total.toFixed(2)),h("span",{class:"insight-pct"},pct+"%")),
+      ),
+      h("div",{class:"bar-track"},...bars),
+      h("div",{class:"insight-person-row"},...chips),
+    );
+  });
+
+  const legend = h("div",{class:"legend"},
+    ...PEOPLE.map((p,i)=>h("span",{class:"legend-item"},
+      h("span",{class:"legend-dot",style:`background:${i===0?"#c9a84c":"#8aafc9"}`}),
+      p===state.user?`${p} (you)`:p,
+    ))
+  );
+
+  return h("div",{},rangeTabs,
+    h("div",{class:"insights-period"},rangeLabel+" · €"+grandCat.toFixed(2)+" total"),
+    ...rows, legend,
+  );
+}
+
+// ── Boot ──────────────────────────────────────────────────────────────────────
+render();
+if (state.scriptUrl) {
+  loadData();
+  startPoll();
+}
+</script>
+</body>
+</html>
