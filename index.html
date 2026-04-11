@@ -310,17 +310,21 @@ function buildApp(){
     logDateMode="today"; todayBtn.className="date-tab active"; manualBtn.className="date-tab";
     logManualDate=todayStr(); dateDisplay.textContent="Today";
   }}, "Today");
-  const manualBtn=mk("button",{cls:"date-tab",onClick:()=>{
-    logDateMode="manual"; todayBtn.className="date-tab"; manualBtn.className="date-tab active";
-    datePick.value=logManualDate; datePick.click();
-  }}, "Pick date");
-  const dateDisplay=mk("div",{style:"margin-top:8px;font-size:15px;color:#8a7a5a;padding:4px 0;"},"Today");
-  const datePick=mk("input",{type:"date",value:todayStr(),style:"position:absolute;opacity:0;pointer-events:none;width:0;height:0;",
+
+  // Wrap "Pick date" in a relative container with an invisible date input overlaid on top
+  const datePick=mk("input",{type:"date",value:todayStr(),
+    style:"position:absolute;inset:0;width:100%;height:100%;opacity:0;cursor:pointer;",
     onChange:e=>{
       logManualDate=e.target.value;
+      logDateMode="manual";
+      todayBtn.className="date-tab";
+      manualBtn.className="date-tab active";
       dateDisplay.textContent=fmtDate(e.target.value);
     }
   });
+  const manualBtn=mk("div",{cls:"date-tab",style:"position:relative;cursor:pointer;text-align:center;"},"Pick date",datePick);
+
+  const dateDisplay=mk("div",{style:"margin-top:8px;font-size:15px;color:#8a7a5a;padding:4px 0;"},"Today");
   let logDateMode="today",logManualDate=todayStr();
 
   const saveBtn=mk("button",{cls:"submit-btn btn-disabled",onClick:async()=>{
@@ -337,8 +341,8 @@ function buildApp(){
     logAmt="";logDesc="";logCat=CATS[0];catManual=false;logDateMode="today";
     amtInput.value="";descInput.value="";
     catSelect.value=CATS[0];catSelect.classList.remove("select-hi");autoHint.style.display="none";
-    todayBtn.className="date-tab active";manualBtn.className="date-tab";
-    datePick.style.display="none";dateDisplay.style.display="";dateDisplay.textContent="Today";
+    todayBtn.className="date-tab active"; manualBtn.className="date-tab";
+    dateDisplay.textContent="Today"; logDateMode="today";
     saveBtn.className="submit-btn saved";saveBtn.textContent="✓ Saved";
     setTimeout(()=>{saveBtn.className="submit-btn btn-disabled";saveBtn.textContent=`Log as ${S.user}`;updateBtn();},2000);
   }});
