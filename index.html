@@ -97,7 +97,7 @@
     .legend-item { display:flex; align-items:center; gap:6px; font-size:12px; color:var(--ink-light); }
     .legend-dot { width:10px; height:10px; border-radius:50%; display:inline-block; flex-shrink:0; }
 
-    .screen { min-height:100vh; background:var(--paper); display:flex; align-items:center; justify-content:center; padding:20px; }
+    .screen { min-height:100vh; background:var(--ink); display:flex; align-items:center; justify-content:center; padding:20px; }
     .card { background:var(--card); border:1px solid var(--border-d); border-radius:16px; padding:36px 28px; width:100%; max-width:340px; box-shadow:0 4px 24px rgba(44,36,22,.08); }
     .card-center { text-align:center; }
     .big-emoji { font-size:48px; margin-bottom:12px; }
@@ -272,9 +272,8 @@ function buildPick(){
       mk("div",{cls:"pick-buttons"},
         ...PEOPLE.map(p=>mk("button",{cls:"pick-btn",onClick:()=>{ls.set("lb_user",p);S.user=p;renderRoot();load();startPoll();}},p))
       ),
-      mk("button",{cls:"reset-btn",onClick:()=>{ls.del("lb_url");S.url="";S.setupStep=1;S.setupUrl="";renderRoot();}},"⚙ Reset connection"),
-      mk("button",{cls:"reset-btn",style:"margin-top:8px",onClick:()=>window.location.reload()},"↻ Reload app"),
-      mk("div",{style:"margin-top:16px;font-size:11px;color:#bbb;letter-spacing:0.08em;"},"v1.2"),
+      mk("button",{cls:"reset-btn",style:"margin-top:16px;",onClick:()=>window.location.reload()},"↻ Reload app"),
+      mk("div",{style:"margin-top:12px;font-size:11px;color:#bbb;letter-spacing:0.08em;"},"v1.3"),
     )
   );
 }
