@@ -98,10 +98,10 @@
     .legend-dot { width:10px; height:10px; border-radius:50%; display:inline-block; flex-shrink:0; }
 
     .screen { min-height:100vh; background:var(--ink); display:flex; align-items:center; justify-content:center; padding:20px; }
-    .card { background:var(--card); border:1px solid var(--border-d); border-radius:16px; padding:36px 28px; width:100%; max-width:340px; box-shadow:0 4px 24px rgba(44,36,22,.08); }
+    .card { background:var(--card); border:1px solid var(--border-d); border-radius:16px; padding:44px 32px 32px; width:100%; max-width:340px; box-shadow:0 4px 24px rgba(44,36,22,.08); }
     .card-center { text-align:center; }
-    .big-emoji { font-size:48px; margin-bottom:12px; }
-    .card-title { font-size:26px; color:var(--ink); margin:0 0 8px; font-weight:normal; }
+    .big-emoji { font-size:48px; margin-bottom:16px; }
+    .card-title { font-size:28px; color:var(--ink); margin:0 0 0; font-weight:normal; letter-spacing:0.02em; }
     .card-sub { font-size:15px; color:var(--ink-light); margin:0 0 28px; }
     .pick-buttons { display:flex; flex-direction:column; gap:12px; }
     .pick-btn { padding:14px; background:var(--ink); color:#f5f0e8; border:none; border-radius:8px; font-size:17px; font-family:inherit; cursor:pointer; }
@@ -268,12 +268,13 @@ function buildPick(){
     mk("div",{cls:"card card-center"},
       mk("div",{cls:"big-emoji"},"💰❤️💰"),
       mk("h1",{cls:"card-title"},"PS Ledger"),
-      mk("p",{cls:"card-sub"},"Who are you?"),
+      mk("div",{style:"height:32px;"}),
       mk("div",{cls:"pick-buttons"},
         ...PEOPLE.map(p=>mk("button",{cls:"pick-btn",onClick:()=>{ls.set("lb_user",p);S.user=p;renderRoot();load();startPoll();}},p))
       ),
-      mk("button",{cls:"reset-btn",style:"margin-top:16px;",onClick:()=>window.location.reload()},"↻ Reload app"),
-      mk("div",{style:"margin-top:12px;font-size:11px;color:#bbb;letter-spacing:0.08em;"},"v1.5"),
+      mk("div",{style:"margin-top:36px;padding-top:16px;border-top:1px solid var(--border-d);display:flex;flex-direction:column;align-items:center;gap:6px;"}),
+      mk("button",{cls:"reset-btn",style:"margin-top:36px;border-top:1px solid var(--border-d);padding-top:16px;width:100%;text-align:center;border-left:none;border-right:none;border-bottom:none;border-radius:0;",onClick:()=>window.location.reload()},"↻ Reload app"),
+      mk("div",{style:"font-size:11px;color:#bbb;letter-spacing:0.08em;margin-top:6px;"},"v1.6"),
     )
   );
 }
