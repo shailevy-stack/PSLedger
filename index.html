@@ -7,7 +7,7 @@
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
   <meta name="apple-mobile-web-app-title" content="Ledger" />
   <meta name="theme-color" content="#2c2416" />
-  <title>Shared Ledger</title>
+  <title>PS Ledger</title>
   <style>
     *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
     :root {
@@ -227,7 +227,7 @@ function buildSetup(){
     mk("div",{cls:"card"},
       mk("div",{cls:"card-center"},
         mk("div",{cls:"big-emoji"},"📒"),
-        mk("h1",{cls:"card-title"},"Shared Ledger"),
+        mk("h1",{cls:"card-title"},"PS Ledger"),
         mk("p",{style:"font-size:13px;color:#8a7a5a;margin-bottom:20px"},"One-time setup — ~5 minutes"),
       ),
       ...steps.map((s,i)=>{
@@ -267,7 +267,7 @@ function buildPick(){
   return mk("div",{cls:"screen"},
     mk("div",{cls:"card card-center"},
       mk("div",{cls:"big-emoji"},"📒"),
-      mk("h1",{cls:"card-title"},"Shared Ledger"),
+      mk("h1",{cls:"card-title"},"PS Ledger"),
       mk("p",{cls:"card-sub"},"Who are you?"),
       mk("div",{cls:"pick-buttons"},
         ...PEOPLE.map(p=>mk("button",{cls:"pick-btn",onClick:()=>{ls.set("lb_user",p);S.user=p;renderRoot();load();startPoll();}},p))
@@ -383,7 +383,7 @@ function buildApp(){
 
   // ── Shell ─────────────────────────────────────────────────────────────────
   const header=mk("div",{cls:"header"},
-    mk("div",{cls:"header-left"},mk("span",{style:"font-size:20px"},"📒"),mk("span",{cls:"header-title"},"Shared Ledger")),
+    mk("div",{cls:"header-left"},mk("span",{style:"font-size:20px"},"📒"),mk("span",{cls:"header-title"},"PS Ledger")),
     mk("button",{cls:"user-badge",onClick:()=>{ls.del("lb_user");S.user="";appShell=null;logForm=null;if(pollTimer)clearInterval(pollTimer);renderRoot();}},S.user+" ↩"),
   );
 
