@@ -226,7 +226,7 @@ function buildSetup(){
   const wrap=mk("div",{cls:"screen"},
     mk("div",{cls:"card"},
       mk("div",{cls:"card-center"},
-        mk("div",{cls:"big-emoji"},"📒"),
+        mk("div",{cls:"big-emoji"},"💰❤️💰"),
         mk("h1",{cls:"card-title"},"PS Ledger"),
         mk("p",{style:"font-size:13px;color:#8a7a5a;margin-bottom:20px"},"One-time setup — ~5 minutes"),
       ),
@@ -266,7 +266,7 @@ async function doConnect(){
 function buildPick(){
   return mk("div",{cls:"screen"},
     mk("div",{cls:"card card-center"},
-      mk("div",{cls:"big-emoji"},"📒"),
+      mk("div",{cls:"big-emoji"},"💰❤️💰"),
       mk("h1",{cls:"card-title"},"PS Ledger"),
       mk("p",{cls:"card-sub"},"Who are you?"),
       mk("div",{cls:"pick-buttons"},
@@ -274,7 +274,7 @@ function buildPick(){
       ),
       mk("button",{cls:"reset-btn",onClick:()=>{ls.del("lb_url");S.url="";S.setupStep=1;S.setupUrl="";renderRoot();}},"⚙ Reset connection"),
       mk("button",{cls:"reset-btn",style:"margin-top:8px",onClick:()=>window.location.reload()},"↻ Reload app"),
-      mk("div",{style:"margin-top:16px;font-size:11px;color:#bbb;letter-spacing:0.08em;"},"v1.0"),
+      mk("div",{style:"margin-top:16px;font-size:11px;color:#bbb;letter-spacing:0.08em;"},"v1.2"),
     )
   );
 }
@@ -383,7 +383,7 @@ function buildApp(){
 
   // ── Shell ─────────────────────────────────────────────────────────────────
   const header=mk("div",{cls:"header"},
-    mk("div",{cls:"header-left"},mk("span",{style:"font-size:20px"},"📒"),mk("span",{cls:"header-title"},"PS Ledger")),
+    mk("div",{cls:"header-left"},mk("span",{style:"font-size:20px"},"💰❤️💰"),mk("span",{cls:"header-title"},"PS Ledger")),
     mk("button",{cls:"user-badge",onClick:()=>{ls.del("lb_user");S.user="";appShell=null;logForm=null;if(pollTimer)clearInterval(pollTimer);renderRoot();}},S.user+" ↩"),
   );
 
