@@ -272,9 +272,10 @@ function buildPick(){
       mk("div",{cls:"pick-buttons"},
         ...PEOPLE.map(p=>mk("button",{cls:"pick-btn",onClick:()=>{ls.set("lb_user",p);S.user=p;renderRoot();load();startPoll();}},p))
       ),
-      mk("div",{style:"margin-top:36px;padding-top:16px;border-top:1px solid var(--border-d);display:flex;flex-direction:column;align-items:center;gap:6px;"}),
-      mk("button",{cls:"reset-btn",style:"margin-top:36px;border-top:1px solid var(--border-d);padding-top:16px;width:100%;text-align:center;border-left:none;border-right:none;border-bottom:none;border-radius:0;",onClick:()=>window.location.reload()},"↻ Reload app"),
-      mk("div",{style:"font-size:11px;color:#bbb;letter-spacing:0.08em;margin-top:6px;"},"v1.6"),
+      mk("div",{style:"margin-top:36px;padding-top:20px;border-top:1px solid var(--border-d);"},
+        mk("button",{cls:"reset-btn",style:"display:block;margin:0 auto;",onClick:()=>window.location.reload()},"↻ Reload app"),
+        mk("div",{style:"font-size:11px;color:#bbb;letter-spacing:0.08em;margin-top:8px;"},"v1.6"),
+      ),
     )
   );
 }
