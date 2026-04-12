@@ -274,6 +274,7 @@ function buildPick(){
       ),
       mk("button",{cls:"reset-btn",onClick:()=>{ls.del("lb_url");S.url="";S.setupStep=1;S.setupUrl="";renderRoot();}},"⚙ Reset connection"),
       mk("button",{cls:"reset-btn",style:"margin-top:8px",onClick:()=>window.location.reload()},"↻ Reload app"),
+      mk("div",{style:"margin-top:16px;font-size:11px;color:#bbb;letter-spacing:0.08em;"},"v1.0"),
     )
   );
 }
