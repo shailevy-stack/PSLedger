@@ -273,7 +273,7 @@ function buildPick(){
         ...PEOPLE.map(p=>mk("button",{cls:"pick-btn",onClick:()=>{ls.set("lb_user",p);S.user=p;renderRoot();load();startPoll();}},p))
       ),
       mk("button",{cls:"reset-btn",style:"margin-top:16px;",onClick:()=>window.location.reload()},"↻ Reload app"),
-      mk("div",{style:"margin-top:12px;font-size:11px;color:#bbb;letter-spacing:0.08em;"},"v1.4"),
+      mk("div",{style:"margin-top:12px;font-size:11px;color:#bbb;letter-spacing:0.08em;"},"v1.5"),
     )
   );
 }
@@ -309,8 +309,11 @@ function buildApp(){
   const todayBtn=mk("button",{cls:"date-tab active",
     type:"button",
     onClick:()=>{
-      logDateMode="today"; todayBtn.className="date-tab active"; manualBtn.className="date-tab";
-      logManualDate=todayStr(); dateDisplay.textContent="Today";
+      logDateMode="today";
+      todayBtn.className="date-tab active";
+      manualBtn.className="date-tab";
+      logManualDate=todayStr();
+      dateDisplay.textContent="Today";
       updateBtn();
     }
   }, "Today");
@@ -365,7 +368,7 @@ function buildApp(){
     mk("div",{cls:"form-row"},mk("label",{cls:"label"},"Amount"),mk("div",{cls:"amount-wrap"},mk("span",{cls:"amount-prefix"},"€"),amtInput)),
     mk("div",{cls:"form-row"},mk("label",{cls:"label"},"What for?"),descInput),
     mk("div",{cls:"form-row"},mk("div",{cls:"cat-label-row"},mk("label",{cls:"label"},"Category"),autoHint),catSelect),
-    mk("div",{cls:"form-row",style:"position:relative;"},mk("label",{cls:"label"},"Date"),mk("div",{cls:"date-tabs"},todayBtn,manualBtn),dateDisplay,datePick),
+    mk("div",{cls:"form-row",style:"position:relative;"},mk("label",{cls:"label"},"Date"),mk("div",{cls:"date-tabs"},todayBtn,manualBtn),dateDisplay),
     saveBtn,
   );
 
