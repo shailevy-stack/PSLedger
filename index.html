@@ -34,7 +34,7 @@
     .nav-btn { flex:1; background:none; border:none; color:#c4b89a; padding:11px 0; font-size:13px; cursor:pointer; font-family:inherit; letter-spacing:.02em; border-bottom:2px solid transparent; }
     .nav-btn.active { color:#f5f0e8; background:var(--ink); border-bottom:2px solid var(--gold); }
 
-    .shop-sync-dot { width:8px; height:8px; border-radius:50%; background:transparent; display:inline-block; margin-left:6px; flex-shrink:0; vertical-align:middle; }
+    .shop-sync-dot { width:8px; height:8px; border-radius:50%; background:#8a6a3a; display:inline-block; margin-left:6px; flex-shrink:0; vertical-align:middle; }
     .shop-sync-dot.saving { background:var(--gold); animation:pulse .5s infinite alternate; }
     .shop-sync-dot.saved { background:var(--green); animation:none; }
     @keyframes pulse { from{opacity:1} to{opacity:.2} }
@@ -361,7 +361,7 @@ function buildPick(){
       ),
       mk("div",{style:"margin-top:36px;padding-top:20px;border-top:1px solid var(--border-d);"},
         mk("button",{cls:"reset-btn",style:"display:block;margin:0 auto;",onClick:()=>window.location.reload()},"↻ Reload app"),
-        mk("div",{style:"font-size:11px;color:#bbb;letter-spacing:0.08em;margin-top:8px;"},"v3.0"),
+        mk("div",{style:"font-size:11px;color:#bbb;letter-spacing:0.08em;margin-top:8px;"},"v3.1"),
       ),
     )
   );
