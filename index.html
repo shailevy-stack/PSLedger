@@ -34,10 +34,13 @@
     .nav-btn { flex:1; background:none; border:none; color:#c4b89a; padding:11px 0; font-size:13px; cursor:pointer; font-family:inherit; letter-spacing:.02em; border-bottom:2px solid transparent; }
     .nav-btn.active { color:#f5f0e8; background:var(--ink); border-bottom:2px solid var(--gold); }
 
-    .shop-sync-dot { width:8px; height:8px; border-radius:50%; background:#8a6a3a; display:inline-block; margin-left:6px; flex-shrink:0; vertical-align:middle; }
-    .shop-sync-dot.saving { background:var(--gold); animation:pulse .5s infinite alternate; }
-    .shop-sync-dot.saved { background:var(--green); animation:none; }
-    @keyframes pulse { from{opacity:1} to{opacity:.2} }
+    .sec-dot { width:7px; height:7px; border-radius:50%; display:inline-block; margin-left:5px; flex-shrink:0; vertical-align:middle; background:var(--ink-light); }
+    .sec-dot.local { background:#8a6a3a; animation:none; }
+    .sec-dot.saving { background:var(--gold); animation:blink .5s infinite alternate; }
+    .sec-dot.synced { background:var(--green); animation:none; }
+    .sec-dot.new { background:var(--red); animation:none; }
+    .sec-dot.pulling { background:var(--red); animation:blink .5s infinite alternate; }
+    @keyframes blink { from{opacity:1} to{opacity:.15} }
     .shop-input-row { display:flex; gap:8px; margin-bottom:16px; }
     .shop-input { flex:1; font-size:16px; font-family:'Georgia',serif; border:1px solid var(--border); border-radius:8px; background:var(--card); color:var(--ink); padding:12px 14px; outline:none; }
     .shop-input:focus { border-color:var(--gold); }
@@ -238,20 +241,48 @@ async function load(quiet=false){
     S.loading=false;S.loadErr="";
   }catch(e){S.loading=false;S.loadErr=e.message;}
   refreshHistory(); refreshBalance(); refreshInsights();
-  // midnight clear — only on load, not on every render
-  const today=todayStr();
-  const lastClear=ls.get("shop_clear_date");
-  if(lastClear && lastClear!==today){
-    const cleared=S.shopping.filter(i=>!i.done);
-    if(cleared.length!==S.shopping.length){
-      S.shopping=cleared;
-      apiWrite(S.url,{expenses:S.expenses,memory:S.memory,shopping:cleared});
+  // check if ledger has new data since last seen
+  if(S.expenses.length > _lastSeenExpenseCount){
+    if(_lastSeenExpenseCount>0){
+      setDot("dot-ledger","new");
+      setDot("dot-history","new");
+    } else {
+      // first load — set baseline, no red dot
+      _lastSeenExpenseCount=S.expenses.length;
+      setDot("dot-ledger","synced");
+      setDot("dot-history","synced");
     }
-    ls.set("shop_clear_date",today);
-  } else if(!lastClear){
-    ls.set("shop_clear_date",today);
+    // don't update _lastSeenExpenseCount yet — user hasn't seen it
+  } else {
+    setDot("dot-ledger","synced");
+    setDot("dot-history","synced");
   }
-  refreshShopping();
+  // shopping
+  if(!_shopDirty){
+    const newHash=S.shopping.map(i=>i.id+i.done+i.color).join("|");
+    const midnight_clear=()=>{
+      const today=todayStr();
+      const lastClear=ls.get("shop_clear_date");
+      if(lastClear && lastClear!==today){
+        const cleared=S.shopping.filter(i=>!i.done);
+        if(cleared.length!==S.shopping.length){S.shopping=cleared;apiWrite(S.url,{expenses:S.expenses,memory:S.memory,shopping:cleared});}
+        ls.set("shop_clear_date",today);
+      } else if(!lastClear) ls.set("shop_clear_date",today);
+    };
+    midnight_clear();
+    if(_lastSeenShoppingHash===""){ 
+      // first load — set baseline
+      _lastSeenShoppingHash=newHash;
+      refreshShopping();
+      setDot("dot-shopping","synced");
+    } else if(newHash!==_lastSeenShoppingHash){
+      // server has new shopping data
+      setDot("dot-shopping","new");
+      // don't update hash yet — user hasn't seen it
+    } else {
+      setDot("dot-shopping","synced");
+    }
+  }
   if(updateLogBtn) updateLogBtn();
 }
 async function freshWrite(fn){
@@ -259,39 +290,47 @@ async function freshWrite(fn){
   try{
     const next=fn(S.expenses, S.memory, S.shopping);
     S.expenses=next.expenses; S.memory=next.memory; S.shopping=next.shopping||S.shopping;
-    refreshHistory(); refreshBalance(); refreshInsights(); refreshShopping();
+    _lastSeenExpenseCount=S.expenses.length;
+    refreshHistory(); refreshBalance(); refreshInsights(); rebuildShopList();
     if(updateLogBtn) updateLogBtn();
+    setDot("dot-ledger","saving");
     await apiWrite(S.url,next);
-  }catch(e){alert("Save failed: "+e.message);}
+    setDot("dot-ledger","synced");
+  }catch(e){alert("Save failed: "+e.message); setDot("dot-ledger","local");}
   writeLock=false;
 }
+// ── Unified dot system ────────────────────────────────────────────────────────
+function setDot(id, state){ const d=el(id); if(d) d.className="sec-dot "+state; }
+
+// ── Shopping state ────────────────────────────────────────────────────────────
 let _shopDirty=false;
+let _shopAutoTimer=null;
 async function shopWrite(newShopping){
   S.shopping=newShopping;
   _shopDirty=true;
   rebuildShopList();
-  updateShopDot();
+  setDot("dot-shopping","local");
+  if(_shopAutoTimer) clearTimeout(_shopAutoTimer);
+  _shopAutoTimer=setTimeout(()=>shopCommit(),10000);
 }
 async function shopCommit(){
+  if(_shopAutoTimer){clearTimeout(_shopAutoTimer);_shopAutoTimer=null;}
   if(!_shopDirty) return;
-  const dot=el("shop-sync-dot");
-  if(dot) dot.className="shop-sync-dot saving";
+  setDot("dot-shopping","saving");
   try{
     await apiWrite(S.url,{expenses:S.expenses,memory:S.memory,shopping:S.shopping});
     _shopDirty=false;
-    const d=el("shop-sync-dot");
-    if(d) d.className="shop-sync-dot saved";
+    _lastSeenShoppingHash=S.shopping.map(i=>i.id+i.done+i.color).join("|");
+    setDot("dot-shopping","synced");
   }catch(e){
-    const d=el("shop-sync-dot");
-    if(d) d.className="shop-sync-dot"; // back to off if failed
+    setDot("dot-shopping","local");
     alert("Save failed: "+e.message);
   }
 }
-function updateShopDot(){
-  // dot stays off during local edits — only lights up on commit
-  const dot=el("shop-sync-dot");
-  if(dot) dot.className="shop-sync-dot";
-}
+
+// ── Ledger state ──────────────────────────────────────────────────────────────
+let _lastSeenExpenseCount=0;
+let _lastSeenShoppingHash="";
 function startPoll(){if(pollTimer)clearInterval(pollTimer);pollTimer=setInterval(()=>load(true),20000);}
 
 // ── Root renderer — decides which top-level screen to show ───────────────────
@@ -361,7 +400,7 @@ function buildPick(){
       ),
       mk("div",{style:"margin-top:36px;padding-top:20px;border-top:1px solid var(--border-d);"},
         mk("button",{cls:"reset-btn",style:"display:block;margin:0 auto;",onClick:()=>window.location.reload()},"↻ Reload app"),
-        mk("div",{style:"font-size:11px;color:#bbb;letter-spacing:0.08em;margin-top:8px;"},"v3.1"),
+        mk("div",{style:"font-size:11px;color:#bbb;letter-spacing:0.08em;margin-top:8px;"},"v3.3"),
       ),
     )
   );
@@ -489,7 +528,6 @@ function buildApp(){
   const sectionBtns={};
 
   const shopPanel=mk("div",{cls:"tab-panel",id:"section-shopping"});
-  const shopSyncDot=mk("span",{cls:"shop-sync-dot",id:"shop-sync-dot"});
   const boardPanel=mk("div",{cls:"tab-panel",id:"section-blackboard"},
     mk("div",{cls:"body"},mk("p",{cls:"empty",style:"margin-top:60px;"},"Coming soon ✨"))
   );
@@ -498,7 +536,6 @@ function buildApp(){
     sectionBtns[activeSection].classList.remove("active");
     activeSection=s; S.section=s; ls.set("lb_section",s);
     sectionBtns[s].classList.add("active");
-    // show/hide nav and content
     if(s==="ledger"){
       nav.style.display=""; body.style.display="";
       shopPanel.classList.remove("active"); boardPanel.classList.remove("active");
@@ -506,6 +543,18 @@ function buildApp(){
       nav.style.display="none"; body.style.display="none";
       shopPanel.classList.add("active"); boardPanel.classList.remove("active");
       refreshShopping();
+      const sd=el("dot-shopping");
+      if(sd&&sd.classList.contains("new")){
+        // pull fresh data
+        setDot("dot-shopping","pulling");
+        load(true).then(()=>{
+          _lastSeenShoppingHash=S.shopping.map(i=>i.id+i.done+i.color).join("|");
+          refreshShopping();
+          setDot("dot-shopping","synced");
+        });
+      } else if(_shopDirty){
+        shopCommit();
+      }
     } else {
       nav.style.display="none"; body.style.display="none";
       shopPanel.classList.remove("active"); boardPanel.classList.add("active");
@@ -513,12 +562,11 @@ function buildApp(){
   }
 
   const sectionBar=mk("div",{cls:"section-bar"},...sections.map(([v,icon,label])=>{
-    const b=mk("button",{cls:"section-btn"+(v===activeSection?" active":""),onClick:()=>{
-      if(v==="shopping" && _shopDirty) shopCommit();
-      switchSection(v);
-    }},
+    const dotId=v==="ledger"?"dot-ledger":v==="shopping"?"dot-shopping":"dot-board";
+    const dot=mk("span",{cls:"sec-dot synced",id:dotId});
+    const b=mk("button",{cls:"section-btn"+(v===activeSection?" active":""),onClick:()=>switchSection(v)},
       mk("span",{cls:"s-icon"},icon),
-      mk("span",{cls:"s-label"},v==="shopping"?mk("span",{},"Shopping",shopSyncDot):label),
+      mk("span",{cls:"s-label",style:"display:flex;align-items:center;"},label,dot),
     );
     sectionBtns[v]=b; return b;
   }));
@@ -526,16 +574,35 @@ function buildApp(){
   const tabs=[["log","＋ Log"],["history","History"],["balance","Balance"],["insights","Insights"]];
   let activeTab="log";
   const navBtns={};
+
+  // History dot — lives in the History sub-tab button
+  const histDot=mk("span",{cls:"sec-dot synced",id:"dot-history"});
+
   const panels={log:mk("div",{cls:"tab-panel active",id:"tab-log"},logForm),history:histPanel,balance:balPanel,insights:insPanel};
 
   function switchTab(t){
     navBtns[activeTab].classList.remove("active"); panels[activeTab].classList.remove("active");
     activeTab=t;
     navBtns[t].classList.add("active"); panels[t].classList.add("active");
+    if(t==="history"){
+      // if red, pull fresh data
+      const d=el("dot-history");
+      if(d&&d.classList.contains("new")){
+        setDot("dot-history","pulling");
+        setDot("dot-ledger","pulling");
+        load(true).then(()=>{
+          _lastSeenExpenseCount=S.expenses.length;
+          setDot("dot-history","synced");
+          setDot("dot-ledger","synced");
+        });
+      }
+    }
   }
 
   const nav=mk("div",{cls:"nav"},...tabs.map(([v,l])=>{
-    const b=mk("button",{cls:"nav-btn"+(v==="log"?" active":""),onClick:()=>switchTab(v)},l);
+    const b=mk("button",{cls:"nav-btn"+(v==="log"?" active":""),onClick:()=>switchTab(v)},
+      v==="history"?mk("span",{style:"display:flex;align-items:center;gap:4px;"},l,histDot):l
+    );
     navBtns[v]=b; return b;
   }));
 
@@ -750,7 +817,7 @@ function refreshShopping(){
       const item={id:Date.now().toString(),text:newItem.trim(),done:false,color:"",createdAt:new Date().toISOString()};
       S.shopping=[item,...S.shopping];
       _shopDirty=true;
-      updateShopDot();
+      setDot("dot-shopping","local");
       rebuildShopList();
       _shopInpEl.value=""; newItem="";
       setTimeout(()=>_shopInpEl.focus(),0);
