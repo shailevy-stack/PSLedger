@@ -229,7 +229,7 @@ async function load(quiet=false){
     const r=await apiRead(S.url);
     S.expenses=Array.isArray(r.expenses)?r.expenses:[];
     S.memory=(r.memory&&typeof r.memory==="object")?r.memory:{};
-    S.shopping=Array.isArray(r.shopping)?r.shopping:[];
+    if(!_shopQueueTimer) S.shopping=Array.isArray(r.shopping)?r.shopping:[];
     S.loading=false;S.loadErr="";
   }catch(e){S.loading=false;S.loadErr=e.message;}
   refreshHistory(); refreshBalance(); refreshInsights();
@@ -275,7 +275,7 @@ function shopQueue(data){
     try{
       await apiWrite(S.url,{expenses:S.expenses,memory:S.memory,shopping:_shopQueueLast});
     }catch(e){alert("Save failed: "+e.message);}
-  },400);
+  },600);
 }
 function startPoll(){if(pollTimer)clearInterval(pollTimer);pollTimer=setInterval(()=>load(true),20000);}
 
@@ -346,7 +346,7 @@ function buildPick(){
       ),
       mk("div",{style:"margin-top:36px;padding-top:20px;border-top:1px solid var(--border-d);"},
         mk("button",{cls:"reset-btn",style:"display:block;margin:0 auto;",onClick:()=>window.location.reload()},"↻ Reload app"),
-        mk("div",{style:"font-size:11px;color:#bbb;letter-spacing:0.08em;margin-top:8px;"},"v2.3"),
+        mk("div",{style:"font-size:11px;color:#bbb;letter-spacing:0.08em;margin-top:8px;"},"v2.4"),
       ),
     )
   );
