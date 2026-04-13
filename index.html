@@ -260,26 +260,26 @@ async function load(quiet=false){
   // shopping
   if(!_shopDirty){
     const newHash=S.shopping.map(i=>i.id+i.done+i.color).join("|");
-    const midnight_clear=()=>{
-      const today=todayStr();
-      const lastClear=ls.get("shop_clear_date");
-      if(lastClear && lastClear!==today){
-        const cleared=S.shopping.filter(i=>!i.done);
-        if(cleared.length!==S.shopping.length){S.shopping=cleared;apiWrite(S.url,{expenses:S.expenses,memory:S.memory,shopping:cleared});}
-        ls.set("shop_clear_date",today);
-      } else if(!lastClear) ls.set("shop_clear_date",today);
-    };
-    midnight_clear();
-    if(_lastSeenShoppingHash===null){ 
-      // first load — set baseline
+    const today=todayStr();
+    const lastClear=ls.get("shop_clear_date");
+    if(lastClear && lastClear!==today){
+      const cleared=S.shopping.filter(i=>!i.done);
+      if(cleared.length!==S.shopping.length){S.shopping=cleared;apiWrite(S.url,{expenses:S.expenses,memory:S.memory,shopping:cleared});}
+      ls.set("shop_clear_date",today);
+    } else if(!lastClear) ls.set("shop_clear_date",today);
+
+    if(_lastSeenShoppingHash===null){
+      // first load — set baseline, show list
       _lastSeenShoppingHash=newHash;
-      refreshShopping();
+      refreshShopping(); // builds panel if not yet built
       setDot("dot-shopping","synced");
     } else if(newHash!==_lastSeenShoppingHash){
-      // server has new shopping data
+      // server has changes — show red, update list silently
+      S.shopping=Array.isArray(S.shopping)?S.shopping:[];
+      rebuildShopList();
       setDot("dot-shopping","new");
-      // don't update hash yet — user hasn't seen it
     } else {
+      rebuildShopList();
       setDot("dot-shopping","synced");
     }
   }
@@ -339,6 +339,7 @@ function renderRoot(){
   if(!S.url){root.append(buildSetup());return;}
   if(!S.user){root.append(buildPick());return;}
   root.append(buildApp());
+  refreshShopping(); // build panel structure eagerly so rebuildShopList works on any load
 }
 
 // ── Setup ─────────────────────────────────────────────────────────────────────
@@ -400,7 +401,7 @@ function buildPick(){
       ),
       mk("div",{style:"margin-top:36px;padding-top:20px;border-top:1px solid var(--border-d);"},
         mk("button",{cls:"reset-btn",style:"display:block;margin:0 auto;",onClick:()=>window.location.reload()},"↻ Reload app"),
-        mk("div",{style:"font-size:11px;color:#bbb;letter-spacing:0.08em;margin-top:8px;"},"v3.4"),
+        mk("div",{style:"font-size:11px;color:#bbb;letter-spacing:0.08em;margin-top:8px;"},"v3.5"),
       ),
     )
   );
