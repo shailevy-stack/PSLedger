@@ -288,7 +288,7 @@ function buildPick(){
       ),
       mk("div",{style:"margin-top:36px;padding-top:20px;border-top:1px solid var(--border-d);"},
         mk("button",{cls:"reset-btn",style:"display:block;margin:0 auto;",onClick:()=>window.location.reload()},"↻ Reload app"),
-        mk("div",{style:"font-size:11px;color:#bbb;letter-spacing:0.08em;margin-top:8px;"},"v1.7"),
+        mk("div",{style:"font-size:11px;color:#bbb;letter-spacing:0.08em;margin-top:8px;"},"v1.8"),
       ),
     )
   );
@@ -433,6 +433,8 @@ function buildApp(){
 // ── Targeted refresh functions (don't touch the log form) ─────────────────────
 function refreshHistory(){
   const hb=el("hist-body"); if(!hb)return;
+  // Don't refresh if an edit form is currently open — would destroy mid-edit
+  if(hb.querySelector(".expense-row.editing")) return;
   hb.innerHTML="";
   if(S.loading){hb.append(mk("p",{cls:"empty"},"Loading…"));return;}
   if(S.loadErr){hb.append(mk("p",{cls:"err-text"},S.loadErr));return;}
