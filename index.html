@@ -34,7 +34,10 @@
     .nav-btn { flex:1; background:none; border:none; color:#c4b89a; padding:11px 0; font-size:13px; cursor:pointer; font-family:inherit; letter-spacing:.02em; border-bottom:2px solid transparent; }
     .nav-btn.active { color:#f5f0e8; background:var(--ink); border-bottom:2px solid var(--gold); }
 
-    .shop-input-row { display:flex; gap:8px; margin-bottom:16px; }
+    .shop-sync-dot { width:8px; height:8px; border-radius:50%; background:#888; display:inline-block; margin-left:8px; transition:background .3s; flex-shrink:0; }
+    .shop-sync-dot.saving { background:var(--gold); animation:pulse .6s infinite alternate; }
+    .shop-sync-dot.saved { background:var(--green); animation:none; }
+    @keyframes pulse { from{opacity:1} to{opacity:.3} }
     .shop-input { flex:1; font-size:16px; font-family:'Georgia',serif; border:1px solid var(--border); border-radius:8px; background:var(--card); color:var(--ink); padding:12px 14px; outline:none; }
     .shop-input:focus { border-color:var(--gold); }
     .shop-add-btn { padding:12px 18px; background:var(--ink); color:#f5f0e8; border:none; border-radius:8px; font-size:20px; cursor:pointer; }
@@ -270,11 +273,19 @@ let _shopQueueLast=null;
 function shopQueue(data){
   _shopQueueLast=data;
   if(_shopQueueTimer) clearTimeout(_shopQueueTimer);
+  const dot=el("shop-sync-dot");
+  if(dot){dot.className="shop-sync-dot saving";}
   _shopQueueTimer=setTimeout(async()=>{
     _shopQueueTimer=null;
     try{
       await apiWrite(S.url,{expenses:S.expenses,memory:S.memory,shopping:_shopQueueLast});
-    }catch(e){alert("Save failed: "+e.message);}
+      const d=el("shop-sync-dot");
+      if(d){d.className="shop-sync-dot saved";setTimeout(()=>{if(d)d.className="shop-sync-dot";},2000);}
+    }catch(e){
+      const d=el("shop-sync-dot");
+      if(d) d.className="shop-sync-dot";
+      alert("Save failed: "+e.message);
+    }
   },600);
 }
 function startPoll(){if(pollTimer)clearInterval(pollTimer);pollTimer=setInterval(()=>load(true),20000);}
@@ -346,7 +357,7 @@ function buildPick(){
       ),
       mk("div",{style:"margin-top:36px;padding-top:20px;border-top:1px solid var(--border-d);"},
         mk("button",{cls:"reset-btn",style:"display:block;margin:0 auto;",onClick:()=>window.location.reload()},"↻ Reload app"),
-        mk("div",{style:"font-size:11px;color:#bbb;letter-spacing:0.08em;margin-top:8px;"},"v2.4"),
+        mk("div",{style:"font-size:11px;color:#bbb;letter-spacing:0.08em;margin-top:8px;"},"v2.5"),
       ),
     )
   );
@@ -474,6 +485,7 @@ function buildApp(){
   const sectionBtns={};
 
   const shopPanel=mk("div",{cls:"tab-panel",id:"section-shopping"});
+  const shopSyncDot=mk("span",{cls:"shop-sync-dot",id:"shop-sync-dot"});
   const boardPanel=mk("div",{cls:"tab-panel",id:"section-blackboard"},
     mk("div",{cls:"body"},mk("p",{cls:"empty",style:"margin-top:60px;"},"Coming soon ✨"))
   );
@@ -499,7 +511,7 @@ function buildApp(){
   const sectionBar=mk("div",{cls:"section-bar"},...sections.map(([v,icon,label])=>{
     const b=mk("button",{cls:"section-btn"+(v===activeSection?" active":""),onClick:()=>switchSection(v)},
       mk("span",{cls:"s-icon"},icon),
-      mk("span",{cls:"s-label"},label),
+      mk("span",{cls:"s-label"},v==="shopping"?mk("span",{},"Shopping",shopSyncDot):label),
     );
     sectionBtns[v]=b; return b;
   }));
