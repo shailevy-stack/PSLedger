@@ -5,9 +5,9 @@
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
   <meta name="apple-mobile-web-app-capable" content="yes" />
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
-  <meta name="apple-mobile-web-app-title" content="Ledger" />
+  <meta name="apple-mobile-web-app-title" content="PS Central" />
   <meta name="theme-color" content="#2c2416" />
-  <title>PS Ledger</title>
+  <title>PS Central</title>
   <style>
     *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
     :root {
@@ -24,9 +24,28 @@
     .header-title { font-size:18px; font-weight:normal; letter-spacing:.04em; }
     .user-badge { background:rgba(255,255,255,.12); border:none; color:#f5f0e8; border-radius:20px; padding:5px 12px; font-size:13px; cursor:pointer; font-family:inherit; }
 
-    .nav { display:flex; background:#3d3020; border-bottom:1px solid var(--ink); position:sticky; top:calc(50px + var(--st)); z-index:9; }
+    .section-bar { display:flex; background:var(--ink); border-bottom:2px solid #1a1208; position:sticky; top:calc(50px + var(--st)); z-index:10; }
+    .section-btn { flex:1; background:none; border:none; color:#8a6a3a; padding:10px 0; font-size:12px; cursor:pointer; font-family:inherit; letter-spacing:.04em; border-bottom:2px solid transparent; display:flex; flex-direction:column; align-items:center; gap:2px; }
+    .section-btn .s-icon { font-size:16px; }
+    .section-btn .s-label { font-size:10px; text-transform:uppercase; letter-spacing:.08em; }
+    .section-btn.active { color:#f5f0e8; border-bottom:2px solid var(--gold); }
+
+    .nav { display:flex; background:#3d3020; border-bottom:1px solid var(--ink); position:sticky; top:calc(90px + var(--st)); z-index:9; }
     .nav-btn { flex:1; background:none; border:none; color:#c4b89a; padding:11px 0; font-size:13px; cursor:pointer; font-family:inherit; letter-spacing:.02em; border-bottom:2px solid transparent; }
     .nav-btn.active { color:#f5f0e8; background:var(--ink); border-bottom:2px solid var(--gold); }
+
+    .shop-input-row { display:flex; gap:8px; margin-bottom:16px; }
+    .shop-input { flex:1; font-size:16px; font-family:'Georgia',serif; border:1px solid var(--border); border-radius:8px; background:var(--card); color:var(--ink); padding:12px 14px; outline:none; }
+    .shop-input:focus { border-color:var(--gold); }
+    .shop-add-btn { padding:12px 18px; background:var(--ink); color:#f5f0e8; border:none; border-radius:8px; font-size:20px; cursor:pointer; }
+    .shop-item { display:flex; align-items:center; gap:10px; padding:13px 12px; border-radius:8px; margin-bottom:6px; background:var(--card); border:1px solid var(--border-d); transition:opacity .3s, filter .3s; user-select:none; }
+    .shop-item.done { opacity:.45; filter:grayscale(.8); }
+    .shop-check { width:22px; height:22px; border-radius:50%; border:2px solid var(--border); background:transparent; flex-shrink:0; cursor:pointer; display:flex; align-items:center; justify-content:center; font-size:12px; }
+    .shop-item.done .shop-check { background:var(--ink); border-color:var(--ink); color:#f5f0e8; }
+    .shop-text { flex:1; font-size:16px; color:var(--ink); }
+    .shop-item.done .shop-text { text-decoration:line-through; color:var(--ink-light); }
+    #section-shopping, #section-blackboard { display:none; flex:1; }
+    #section-shopping.active, #section-blackboard.active { display:block; }
 
     .body { padding:20px 18px calc(20px + var(--sb)); flex:1; }
     .tab-panel { display:none; } .tab-panel.active { display:block; }
@@ -189,7 +208,8 @@ function mk(tag,attrs,...kids){
 // ── State ─────────────────────────────────────────────────────────────────────
 let S={
   url:ls.get("lb_url"), user:ls.get("lb_user"),
-  expenses:[], memory:{}, insightsRange:"month",
+  section:ls.get("lb_section")||"ledger",
+  expenses:[], memory:{}, shopping:[], insightsRange:"month",
   loading:true, loadErr:"", setupStep:1, setupUrl:"", setupErr:"", setupBusy:false,
 };
 let writeLock=false, inferTimer=null, pollTimer=null;
@@ -203,21 +223,29 @@ async function load(quiet=false){
     const r=await apiRead(S.url);
     S.expenses=Array.isArray(r.expenses)?r.expenses:[];
     S.memory=(r.memory&&typeof r.memory==="object")?r.memory:{};
+    S.shopping=Array.isArray(r.shopping)?r.shopping:[];
     S.loading=false;S.loadErr="";
   }catch(e){S.loading=false;S.loadErr=e.message;}
-  refreshHistory(); refreshBalance(); refreshInsights();
+  refreshHistory(); refreshBalance(); refreshInsights(); refreshShopping();
   if(updateLogBtn) updateLogBtn();
 }
 async function freshWrite(fn){
   if(writeLock)return; writeLock=true;
   try{
-    const next=fn(S.expenses, S.memory);
-    S.expenses=next.expenses; S.memory=next.memory;
-    refreshHistory(); refreshBalance(); refreshInsights();
+    const next=fn(S.expenses, S.memory, S.shopping);
+    S.expenses=next.expenses; S.memory=next.memory; S.shopping=next.shopping||S.shopping;
+    refreshHistory(); refreshBalance(); refreshInsights(); refreshShopping();
     if(updateLogBtn) updateLogBtn();
     await apiWrite(S.url,next);
   }catch(e){alert("Save failed: "+e.message);}
   writeLock=false;
+}
+async function shopWrite(newShopping){
+  try{
+    S.shopping=newShopping;
+    refreshShopping();
+    await apiWrite(S.url,{expenses:S.expenses,memory:S.memory,shopping:newShopping});
+  }catch(e){alert("Save failed: "+e.message);}
 }
 function startPoll(){if(pollTimer)clearInterval(pollTimer);pollTimer=setInterval(()=>load(true),20000);}
 
@@ -240,8 +268,8 @@ function buildSetup(){
   const wrap=mk("div",{cls:"screen"},
     mk("div",{cls:"card"},
       mk("div",{cls:"card-center"},
-        mk("div",{cls:"big-emoji"},"💰❤️💰"),
-        mk("h1",{cls:"card-title"},"PS Ledger"),
+        mk("div",{cls:"big-emoji"},"❤️"),
+        mk("h1",{cls:"card-title"},"PS Central"),
         mk("p",{style:"font-size:13px;color:#8a7a5a;margin-bottom:20px"},"One-time setup — ~5 minutes"),
       ),
       ...steps.map((s,i)=>{
@@ -280,15 +308,15 @@ async function doConnect(){
 function buildPick(){
   return mk("div",{cls:"screen"},
     mk("div",{cls:"card card-center"},
-      mk("div",{cls:"big-emoji"},"💰❤️💰"),
-      mk("h1",{cls:"card-title"},"PS Ledger"),
+      mk("div",{cls:"big-emoji"},"❤️"),
+      mk("h1",{cls:"card-title"},"PS Central"),
       mk("div",{style:"height:32px;"}),
       mk("div",{cls:"pick-buttons"},
         ...PEOPLE.map(p=>mk("button",{cls:"pick-btn",onClick:()=>{ls.set("lb_user",p);S.user=p;renderRoot();load();startPoll();}},p))
       ),
       mk("div",{style:"margin-top:36px;padding-top:20px;border-top:1px solid var(--border-d);"},
         mk("button",{cls:"reset-btn",style:"display:block;margin:0 auto;",onClick:()=>window.location.reload()},"↻ Reload app"),
-        mk("div",{style:"font-size:11px;color:#bbb;letter-spacing:0.08em;margin-top:8px;"},"v1.9"),
+        mk("div",{style:"font-size:11px;color:#bbb;letter-spacing:0.08em;margin-top:8px;"},"v2.0"),
       ),
     )
   );
@@ -358,9 +386,10 @@ function buildApp(){
     saveBtn.disabled=true;saveBtn.textContent="Saving…";
     const entry={id:Date.now().toString(),person:S.user,amount:amt,description:logDesc.trim(),
       category:logCat,date:logDateMode==="today"?todayStr():logManualDate,createdAt:new Date().toISOString()};
-    await freshWrite((exps,mem)=>({
+    await freshWrite((exps,mem,shop)=>({
       expenses:[...exps,entry].sort((a,b)=>b.date.localeCompare(a.date)),
       memory:learn(mem,logDesc,logCat),
+      shopping:shop,
     }));
     // reset
     logAmt="";logDesc="";logCat=CATS[0];catManual=false;logDateMode="today";
@@ -405,9 +434,45 @@ function buildApp(){
 
   // ── Shell ─────────────────────────────────────────────────────────────────
   const header=mk("div",{cls:"header"},
-    mk("div",{cls:"header-left"},mk("span",{style:"font-size:20px"},"💰❤️💰"),mk("span",{cls:"header-title"},"PS Ledger")),
+    mk("div",{cls:"header-left"},mk("span",{style:"font-size:18px"},"❤️"),mk("span",{cls:"header-title"},"PS Central")),
     mk("button",{cls:"user-badge",onClick:()=>{ls.del("lb_user");S.user="";appShell=null;logForm=null;if(pollTimer)clearInterval(pollTimer);renderRoot();}},S.user+" ↩"),
   );
+
+  // ── Section bar ───────────────────────────────────────────────────────────
+  const sections=[["ledger","💰","Ledger"],["shopping","🛒","Shopping"],["blackboard","📋","Blackboard"]];
+  let activeSection=S.section;
+  const sectionBtns={};
+
+  const shopPanel=mk("div",{cls:"tab-panel",id:"section-shopping"});
+  const boardPanel=mk("div",{cls:"tab-panel",id:"section-blackboard"},
+    mk("div",{cls:"body"},mk("p",{cls:"empty",style:"margin-top:60px;"},"Coming soon ✨"))
+  );
+
+  function switchSection(s){
+    sectionBtns[activeSection].classList.remove("active");
+    activeSection=s; S.section=s; ls.set("lb_section",s);
+    sectionBtns[s].classList.add("active");
+    // show/hide nav and content
+    if(s==="ledger"){
+      nav.style.display=""; body.style.display="";
+      shopPanel.classList.remove("active"); boardPanel.classList.remove("active");
+    } else if(s==="shopping"){
+      nav.style.display="none"; body.style.display="none";
+      shopPanel.classList.add("active"); boardPanel.classList.remove("active");
+      refreshShopping();
+    } else {
+      nav.style.display="none"; body.style.display="none";
+      shopPanel.classList.remove("active"); boardPanel.classList.add("active");
+    }
+  }
+
+  const sectionBar=mk("div",{cls:"section-bar"},...sections.map(([v,icon,label])=>{
+    const b=mk("button",{cls:"section-btn"+(v===activeSection?" active":""),onClick:()=>switchSection(v)},
+      mk("span",{cls:"s-icon"},icon),
+      mk("span",{cls:"s-label"},label),
+    );
+    sectionBtns[v]=b; return b;
+  }));
 
   const tabs=[["log","＋ Log"],["history","History"],["balance","Balance"],["insights","Insights"]];
   let activeTab="log";
@@ -426,7 +491,13 @@ function buildApp(){
   }));
 
   const body=mk("div",{cls:"body"},...Object.values(panels));
-  appShell=mk("div",{id:"app-shell"},header,nav,body);
+
+  // hide nav/body if not on ledger section at start
+  if(activeSection!=="ledger"){nav.style.display="none";body.style.display="none";}
+  if(activeSection==="shopping") shopPanel.classList.add("active");
+  if(activeSection==="blackboard") boardPanel.classList.add("active");
+
+  appShell=mk("div",{id:"app-shell"},header,sectionBar,nav,body,shopPanel,boardPanel);
   return appShell;
 }
 
@@ -459,7 +530,7 @@ function refreshHistory(){
           ),
           mk("div",{cls:"expense-right"},
             mk("span",{cls:"expense-amt"},"€"+e.amount.toFixed(2)),
-            isMine?mk("button",{cls:"delete-btn",onClick:(ev)=>{ev.stopPropagation();freshWrite((ex,m)=>({expenses:ex.filter(x=>x.id!==e.id),memory:m}));}},"×"):null,
+            isMine?mk("button",{cls:"delete-btn",onClick:(ev)=>{ev.stopPropagation();freshWrite((ex,m,sh)=>({expenses:ex.filter(x=>x.id!==e.id),memory:m,shopping:sh}));}},"×"):null,
           ),
         );
         if(isMine) attachLongPress(row);
@@ -508,10 +579,11 @@ function refreshHistory(){
           e.amount=amt; e.description=editDesc.trim(); e.category=editCat; e.date=editDate;
           buildNormalView();
           row.className="expense-row "+(isMine?"mine":"theirs")+" saving";
-          await freshWrite((exps,mem)=>({
+          await freshWrite((exps,mem,sh)=>({
             expenses:exps.map(x=>x.id===e.id?{...x,amount:amt,description:editDesc.trim(),category:editCat,date:editDate}:x)
                         .sort((a,b)=>b.date.localeCompare(a.date)),
             memory:mem,
+            shopping:sh,
           }));
           row.className="expense-row "+(isMine?"mine":"theirs")+" save-done";
           setTimeout(()=>{row.className="expense-row "+(isMine?"mine":"theirs");},600);
@@ -609,6 +681,60 @@ function refreshInsights(){
     ));
   });
   ip.append(mk("div",{cls:"legend"},...PEOPLE.map((p,i)=>mk("span",{cls:"legend-item"},mk("span",{cls:"legend-dot",style:`background:${i===0?"#c9a84c":"#8aafc9"}`}),p===S.user?p+" (you)":p))));
+}
+
+function refreshShopping(){
+  const sp=el("section-shopping"); if(!sp) return;
+  sp.innerHTML="";
+  const wrap=mk("div",{cls:"body"});
+
+  // input row
+  let newItem="";
+  const inp=mk("input",{cls:"shop-input",type:"text",placeholder:"Add item…",
+    onInput:e=>newItem=e.target.value,
+    onKeydown:e=>{if(e.key==="Enter"&&newItem.trim()) addItem();}
+  });
+  const addBtn=mk("button",{cls:"shop-add-btn",onClick:addItem},"+");
+  async function addItem(){
+    if(!newItem.trim()) return;
+    const item={id:Date.now().toString(),text:newItem.trim(),done:false,createdAt:new Date().toISOString()};
+    await shopWrite([...S.shopping,item]);
+    inp.value=""; newItem="";
+  }
+  wrap.append(mk("div",{cls:"shop-input-row"},inp,addBtn));
+
+  // midnight auto-clear check
+  const today=todayStr();
+  const lastClear=ls.get("shop_clear_date");
+  if(lastClear && lastClear!==today){
+    const cleared=S.shopping.filter(i=>!i.done);
+    if(cleared.length!==S.shopping.length){
+      shopWrite(cleared);
+      ls.set("shop_clear_date",today);
+      return;
+    }
+  }
+  if(!lastClear) ls.set("shop_clear_date",today);
+
+  // item list — undone first, done at bottom
+  const undone=S.shopping.filter(i=>!i.done);
+  const done=S.shopping.filter(i=>i.done);
+  [...undone,...done].forEach(item=>{
+    const row=mk("div",{cls:"shop-item"+(item.done?" done":"")});
+    const check=mk("div",{cls:"shop-check",onClick:async()=>{
+      const updated=S.shopping.map(x=>x.id===item.id?{...x,done:!x.done}:x);
+      await shopWrite(updated);
+    }},item.done?"✓":"");
+    const text=mk("span",{cls:"shop-text"},item.text);
+    const del=mk("button",{cls:"shop-del",onClick:async()=>{
+      await shopWrite(S.shopping.filter(x=>x.id!==item.id));
+    }},"×");
+    row.append(check,text,del);
+    wrap.append(row);
+  });
+
+  if(!S.shopping.length) wrap.append(mk("p",{cls:"empty"},"Nothing on the list."));
+  sp.append(wrap);
 }
 
 // ── Boot ──────────────────────────────────────────────────────────────────────
