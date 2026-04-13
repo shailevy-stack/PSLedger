@@ -47,6 +47,9 @@
     .shop-handle { color:#ccc; font-size:18px; cursor:grab; padding:2px 8px 2px 0; touch-action:none; flex-shrink:0; user-select:none; }
     .shop-item.dragging { opacity:.35; background:#f0ede4; }
     .shop-item.drag-over { border-top:2px solid var(--gold); margin-top:-2px; }
+    .shop-item.c-gold { background:#fff8e6; border-color:#e8c96a; }
+    .shop-item.c-blue { background:#eef4f9; border-color:#8aafc9; }
+    .shop-item.c-green { background:#eef5f0; border-color:#8fbb9a; }
     #section-shopping, #section-blackboard { display:none; flex:1; }
     #section-shopping.active, #section-blackboard.active { display:block; }
 
@@ -258,11 +261,21 @@ async function freshWrite(fn){
   writeLock=false;
 }
 async function shopWrite(newShopping){
-  try{
-    S.shopping=newShopping;
-    refreshShopping();
-    await apiWrite(S.url,{expenses:S.expenses,memory:S.memory,shopping:newShopping});
-  }catch(e){alert("Save failed: "+e.message);}
+  S.shopping=newShopping;
+  refreshShopping();
+  shopQueue(newShopping);
+}
+let _shopQueueTimer=null;
+let _shopQueueLast=null;
+function shopQueue(data){
+  _shopQueueLast=data;
+  if(_shopQueueTimer) clearTimeout(_shopQueueTimer);
+  _shopQueueTimer=setTimeout(async()=>{
+    _shopQueueTimer=null;
+    try{
+      await apiWrite(S.url,{expenses:S.expenses,memory:S.memory,shopping:_shopQueueLast});
+    }catch(e){alert("Save failed: "+e.message);}
+  },400);
 }
 function startPoll(){if(pollTimer)clearInterval(pollTimer);pollTimer=setInterval(()=>load(true),20000);}
 
@@ -333,7 +346,7 @@ function buildPick(){
       ),
       mk("div",{style:"margin-top:36px;padding-top:20px;border-top:1px solid var(--border-d);"},
         mk("button",{cls:"reset-btn",style:"display:block;margin:0 auto;",onClick:()=>window.location.reload()},"↻ Reload app"),
-        mk("div",{style:"font-size:11px;color:#bbb;letter-spacing:0.08em;margin-top:8px;"},"v2.2"),
+        mk("div",{style:"font-size:11px;color:#bbb;letter-spacing:0.08em;margin-top:8px;"},"v2.3"),
       ),
     )
   );
@@ -700,6 +713,8 @@ function refreshInsights(){
   ip.append(mk("div",{cls:"legend"},...PEOPLE.map((p,i)=>mk("span",{cls:"legend-item"},mk("span",{cls:"legend-dot",style:`background:${i===0?"#c9a84c":"#8aafc9"}`}),p===S.user?p+" (you)":p))));
 }
 
+const SHOP_COLORS=["","c-gold","c-blue","c-green"];
+
 function refreshShopping(){
   const sp=el("section-shopping"); if(!sp) return;
   sp.innerHTML="";
@@ -714,22 +729,22 @@ function refreshShopping(){
   const addBtn=mk("button",{cls:"shop-add-btn",onClick:addItem},"+");
   async function addItem(){
     if(!newItem.trim()) return;
-    const item={id:Date.now().toString(),text:newItem.trim(),done:false,createdAt:new Date().toISOString()};
-    await shopWrite([...S.shopping,item]);
-    inp.value=""; newItem="";
+    const item={id:Date.now().toString(),text:newItem.trim(),done:false,color:"",createdAt:new Date().toISOString()};
+    await shopWrite([item,...S.shopping]);  // new items first
+    inp.value=""; newItem=""; inp.focus();
   }
   wrap.append(mk("div",{cls:"shop-input-row"},inp,addBtn));
 
   if(!S.shopping.length){ wrap.append(mk("p",{cls:"empty"},"Nothing on the list.")); sp.append(wrap); return; }
 
-  // undone first, done at bottom
+  // undone first, done at bottom — preserve manual order within each group
   const ordered=[...S.shopping.filter(i=>!i.done),...S.shopping.filter(i=>i.done)];
   const listEl=mk("div",{id:"shop-list"});
-
   let dragSrc=null;
 
   ordered.forEach(item=>{
-    const row=mk("div",{cls:"shop-item"+(item.done?" done":"")});
+    const color=item.color||"";
+    const row=mk("div",{cls:"shop-item"+(item.done?" done":"")+(color?" "+color:"")});
     row.dataset.id=item.id;
 
     // drag handle
@@ -740,49 +755,61 @@ function refreshShopping(){
       row.classList.add("dragging");
     },{passive:true});
 
+    // check
     const check=mk("div",{cls:"shop-check",onClick:async()=>{
-      const updated=S.shopping.map(x=>x.id===item.id?{...x,done:!x.done}:x);
-      await shopWrite(updated);
+      await shopWrite(S.shopping.map(x=>x.id===item.id?{...x,done:!x.done}:x));
     }},item.done?"✓":"");
 
     const text=mk("span",{cls:"shop-text"},item.text);
-
     const del=mk("button",{cls:"shop-del",onClick:async()=>{
       await shopWrite(S.shopping.filter(x=>x.id!==item.id));
     }},"×");
+
+    // color swipe
+    let swipeStartX=null;
+    row.addEventListener("touchstart",e=>{
+      if(e.target===handle) return;
+      swipeStartX=e.touches[0].clientX;
+    },{passive:true});
+    row.addEventListener("touchend",e=>{
+      if(swipeStartX===null||e.target===handle) return;
+      const dx=e.changedTouches[0].clientX-swipeStartX;
+      if(Math.abs(dx)<40){swipeStartX=null;return;}
+      const cur=SHOP_COLORS.indexOf(item.color||"");
+      const next=dx>0
+        ?(cur+1)%SHOP_COLORS.length
+        :(cur-1+SHOP_COLORS.length)%SHOP_COLORS.length;
+      swipeStartX=null;
+      shopWrite(S.shopping.map(x=>x.id===item.id?{...x,color:SHOP_COLORS[next]}:x));
+    },{passive:true});
 
     row.append(handle,check,text,del);
     listEl.append(row);
   });
 
-  // touch move/end on the list container
+  // drag touchmove/end
   listEl.addEventListener("touchmove",e=>{
     if(!dragSrc) return;
     e.preventDefault();
     const touch=e.touches[0];
     const els=[...listEl.querySelectorAll(".shop-item:not(.dragging)")];
     els.forEach(el=>el.classList.remove("drag-over"));
-    const target=els.find(el=>{
-      const r=el.getBoundingClientRect();
-      return touch.clientY>=r.top && touch.clientY<=r.bottom;
-    });
+    const target=els.find(el=>{const r=el.getBoundingClientRect();return touch.clientY>=r.top&&touch.clientY<=r.bottom;});
     if(target) target.classList.add("drag-over");
   },{passive:false});
 
-  listEl.addEventListener("touchend",async e=>{
+  listEl.addEventListener("touchend",async()=>{
     if(!dragSrc) return;
     dragSrc.classList.remove("dragging");
     const over=listEl.querySelector(".drag-over");
-    if(over && over!==dragSrc){
+    if(over&&over!==dragSrc){
       over.classList.remove("drag-over");
-      // reorder S.shopping
       const ids=ordered.map(i=>i.id);
       const srcIdx=ids.indexOf(dragSrc.dataset.id);
       const tgtIdx=ids.indexOf(over.dataset.id);
       const reordered=[...ordered];
       const [moved]=reordered.splice(srcIdx,1);
       reordered.splice(tgtIdx,0,moved);
-      // merge back with original order (preserving any items not in ordered)
       await shopWrite(reordered);
     } else {
       listEl.querySelectorAll(".drag-over").forEach(el=>el.classList.remove("drag-over"));
