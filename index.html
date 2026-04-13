@@ -62,6 +62,22 @@
     .shop-item.c-green { background:#eef5f0; border-color:#8fbb9a; }
     #section-shopping, #section-blackboard { display:none; flex:1; }
     #section-shopping.active, #section-blackboard.active { display:block; }
+    .board-input-row { display:flex; gap:8px; margin-bottom:16px; }
+    .board-input { flex:1; font-size:16px; font-family:'Georgia',serif; border:1px solid var(--border); border-radius:8px; background:var(--card); color:var(--ink); padding:14px; outline:none; min-height:60px; resize:none; line-height:1.5; }
+    .board-input:focus { border-color:var(--gold); }
+    .board-note { border-radius:10px; border:2px solid var(--border-d); background:var(--card); margin-bottom:10px; overflow:hidden; transition:border-color .2s; user-select:none; display:flex; }
+    .board-note.c-gold { border-color:#e8c96a; background:#fff8e6; }
+    .board-note.c-blue { border-color:#8aafc9; background:#eef4f9; }
+    .board-note.c-green { border-color:#8fbb9a; background:#eef5f0; }
+    .board-note-handle { color:#ccc; font-size:18px; cursor:grab; padding:12px 8px 12px 10px; touch-action:none; flex-shrink:0; display:flex; align-items:flex-start; user-select:none; }
+    .board-note-body { flex:1; padding:12px 12px 12px 0; min-width:0; }
+    .board-note-text { font-size:15px; color:var(--ink); line-height:1.5; overflow:hidden; display:-webkit-box; -webkit-box-orient:vertical; -webkit-line-clamp:3; word-break:break-word; }
+    .board-note-text.expanded { display:block; -webkit-line-clamp:unset; }
+    .board-note-text.editing { display:block; outline:none; border:none; background:transparent; width:100%; font-size:15px; font-family:'Georgia',serif; color:var(--ink); line-height:1.5; resize:none; padding:0; min-height:60px; }
+    .board-note-meta { font-size:11px; color:var(--ink-light); margin-top:6px; letter-spacing:.02em; }
+    .board-note-actions { display:flex; align-items:center; gap:8px; margin-top:8px; }
+    .board-more { font-size:12px; color:var(--gold); cursor:pointer; border:none; background:none; font-family:inherit; padding:0; }
+    .board-del { background:none; border:none; color:#ccc; font-size:18px; cursor:pointer; padding:2px; line-height:1; flex-shrink:0; align-self:flex-start; padding-top:10px; padding-right:10px; }
 
     .body { padding:20px 18px calc(20px + var(--sb)); flex:1; }
     .tab-panel { display:none; } .tab-panel.active { display:block; }
@@ -225,7 +241,7 @@ function mk(tag,attrs,...kids){
 let S={
   url:ls.get("lb_url"), user:ls.get("lb_user"),
   section:ls.get("lb_section")||"ledger",
-  expenses:[], memory:{}, shopping:[], insightsRange:"month",
+  expenses:[], memory:{}, shopping:[], blackboard:[], insightsRange:"month",
   loading:true, loadErr:"", setupStep:1, setupUrl:"", setupErr:"", setupBusy:false,
 };
 let writeLock=false, inferTimer=null, pollTimer=null;
@@ -240,6 +256,7 @@ async function load(quiet=false){
     S.expenses=Array.isArray(r.expenses)?r.expenses:[];
     S.memory=(r.memory&&typeof r.memory==="object")?r.memory:{};
     if(!_shopDirty) S.shopping=Array.isArray(r.shopping)?r.shopping:[];
+    if(!_boardDirty) S.blackboard=Array.isArray(r.blackboard)?r.blackboard:[];
     S.loading=false;S.loadErr="";
   }catch(e){S.loading=false;S.loadErr=e.message;}
   refreshHistory(); refreshBalance(); refreshInsights();
@@ -285,6 +302,21 @@ async function load(quiet=false){
       setDot("dot-shopping","synced");
     }
   }
+  // blackboard
+  if(!_boardDirty){
+    const newHash=S.blackboard.map(n=>n.id+n.text+n.color).join("|");
+    if(_lastSeenBoardHash===null){
+      _lastSeenBoardHash=newHash;
+      rebuildBoard();
+      setDot("dot-board","synced");
+    } else if(newHash!==_lastSeenBoardHash){
+      rebuildBoard();
+      setDot("dot-board","new");
+    } else {
+      rebuildBoard();
+      setDot("dot-board","synced");
+    }
+  }
   if(updateLogBtn) updateLogBtn();
 }
 async function freshWrite(fn){
@@ -296,7 +328,7 @@ async function freshWrite(fn){
     refreshHistory(); refreshBalance(); refreshInsights(); rebuildShopList();
     if(updateLogBtn) updateLogBtn();
     setDot("dot-ledger","saving");
-    await apiWrite(S.url,next);
+    await apiWrite(S.url,{expenses:S.expenses,memory:S.memory,shopping:S.shopping,blackboard:S.blackboard});
     setDot("dot-ledger","synced");
   }catch(e){alert("Save failed: "+e.message); setDot("dot-ledger","local");}
   writeLock=false;
@@ -320,7 +352,7 @@ async function shopCommit(){
   if(!_shopDirty) return;
   setDot("dot-shopping","saving");
   try{
-    await apiWrite(S.url,{expenses:S.expenses,memory:S.memory,shopping:S.shopping});
+    await apiWrite(S.url,{expenses:S.expenses,memory:S.memory,shopping:S.shopping,blackboard:S.blackboard});
     _shopDirty=false;
     _lastSeenShoppingHash=S.shopping.map(i=>i.id+i.done+i.color).join("|");
     setDot("dot-shopping","synced");
@@ -333,6 +365,33 @@ async function shopCommit(){
 // ── Ledger state ──────────────────────────────────────────────────────────────
 let _lastSeenExpenseCount=0;
 let _lastSeenShoppingHash=null;
+let _lastSeenBoardHash=null;
+
+// ── Blackboard state ──────────────────────────────────────────────────────────
+let _boardDirty=false;
+let _boardAutoTimer=null;
+async function boardWrite(newBoard){
+  S.blackboard=newBoard;
+  _boardDirty=true;
+  rebuildBoard();
+  setDot("dot-board","local");
+  if(_boardAutoTimer) clearTimeout(_boardAutoTimer);
+  _boardAutoTimer=setTimeout(()=>boardCommit(),10000);
+}
+async function boardCommit(){
+  if(_boardAutoTimer){clearTimeout(_boardAutoTimer);_boardAutoTimer=null;}
+  if(!_boardDirty) return;
+  setDot("dot-board","saving");
+  try{
+    await apiWrite(S.url,{expenses:S.expenses,memory:S.memory,shopping:S.shopping,blackboard:S.blackboard});
+    _boardDirty=false;
+    _lastSeenBoardHash=S.blackboard.map(n=>n.id+n.text+n.color).join("|");
+    setDot("dot-board","synced");
+  }catch(e){
+    setDot("dot-board","local");
+    alert("Save failed: "+e.message);
+  }
+}
 function startPoll(){if(pollTimer)clearInterval(pollTimer);pollTimer=setInterval(()=>load(true),20000);}
 
 // ── Root renderer — decides which top-level screen to show ───────────────────
@@ -342,6 +401,7 @@ function renderRoot(){
   if(!S.user){root.append(buildPick());return;}
   root.append(buildApp());
   refreshShopping(); // build panel structure eagerly so rebuildShopList works on any load
+  refreshBoard();    // same for blackboard
 }
 
 // ── Setup ─────────────────────────────────────────────────────────────────────
@@ -403,7 +463,7 @@ function buildPick(){
       ),
       mk("div",{style:"margin-top:36px;padding-top:20px;border-top:1px solid var(--border-d);"},
         mk("button",{cls:"reset-btn",style:"display:block;margin:0 auto;",onClick:()=>window.location.reload()},"↻ Reload app"),
-        mk("div",{style:"font-size:11px;color:#bbb;letter-spacing:0.08em;margin-top:8px;"},"v3.5"),
+        mk("div",{style:"font-size:11px;color:#bbb;letter-spacing:0.08em;margin-top:8px;"},"v3.6"),
       ),
     )
   );
@@ -522,7 +582,7 @@ function buildApp(){
   // ── Shell ─────────────────────────────────────────────────────────────────
   const header=mk("div",{cls:"header"},
     mk("div",{cls:"header-left"},mk("span",{style:"font-size:18px"},"❤️"),mk("span",{cls:"header-title"},"PS Central")),
-    mk("button",{cls:"user-badge",onClick:()=>{ls.del("lb_user");S.user="";appShell=null;logForm=null;_shopInpEl=null;_shopDirty=false;_lastSeenShoppingHash=null;_lastSeenExpenseCount=0;if(pollTimer)clearInterval(pollTimer);renderRoot();}},S.user+" ↩"),
+    mk("button",{cls:"user-badge",onClick:()=>{ls.del("lb_user");S.user="";appShell=null;logForm=null;_shopInpEl=null;_boardInpEl=null;_shopDirty=false;_boardDirty=false;_lastSeenShoppingHash=null;_lastSeenBoardHash=null;_lastSeenExpenseCount=0;if(pollTimer)clearInterval(pollTimer);renderRoot();}},S.user+" ↩"),
   );
 
   // ── Section bar ───────────────────────────────────────────────────────────
@@ -531,9 +591,7 @@ function buildApp(){
   const sectionBtns={};
 
   const shopPanel=mk("div",{cls:"tab-panel",id:"section-shopping"});
-  const boardPanel=mk("div",{cls:"tab-panel",id:"section-blackboard"},
-    mk("div",{cls:"body"},mk("p",{cls:"empty",style:"margin-top:60px;"},"Coming soon ✨"))
-  );
+  const boardPanel=mk("div",{cls:"tab-panel",id:"section-blackboard"});
 
   function switchSection(s){
     sectionBtns[activeSection].classList.remove("active");
@@ -561,6 +619,18 @@ function buildApp(){
     } else {
       nav.style.display="none"; body.style.display="none";
       shopPanel.classList.remove("active"); boardPanel.classList.add("active");
+      refreshBoard();
+      const bd=el("dot-board");
+      if(bd&&bd.classList.contains("new")){
+        setDot("dot-board","pulling");
+        load(true).then(()=>{
+          _lastSeenBoardHash=S.blackboard.map(n=>n.id+n.text+n.color).join("|");
+          rebuildBoard();
+          setDot("dot-board","synced");
+        });
+      } else if(_boardDirty){
+        boardCommit();
+      }
     }
   }
 
@@ -915,6 +985,189 @@ function rebuildShopList(){
       const [moved]=reordered.splice(srcIdx,1);
       reordered.splice(tgtIdx,0,moved);
       await shopWrite(reordered);
+    } else {
+      listEl.querySelectorAll(".drag-over").forEach(el=>el.classList.remove("drag-over"));
+    }
+    dragSrc=null;
+  });
+
+  wrap.append(listEl);
+}
+
+const BOARD_COLORS=["","c-gold","c-blue","c-green"];
+let _boardInpEl=null;
+
+function refreshBoard(){
+  const bp=el("section-blackboard"); if(!bp) return;
+  if(_boardInpEl) { rebuildBoard(); return; }
+
+  // ── Build input once ──────────────────────────────────────────────────────
+  _boardInpEl=mk("textarea",{cls:"board-input",placeholder:"New note…",rows:"2",
+    onInput:e=>{
+      _boardInpEl._val=e.target.value;
+      e.target.style.height="auto";
+      e.target.style.height=e.target.scrollHeight+"px";
+    },
+    onKeydown:e=>{if(e.key==="Enter"&&!e.shiftKey&&_boardInpEl._val&&_boardInpEl._val.trim()){e.preventDefault();addNote();}}
+  });
+  _boardInpEl._val="";
+
+  const addBtn=mk("button",{cls:"shop-add-btn",type:"button",onClick:addNote},"+");
+
+  async function addNote(){
+    const text=(_boardInpEl._val||"").trim(); if(!text) return;
+    const note={id:Date.now().toString(),text,color:"",person:S.user,createdAt:new Date().toISOString()};
+    await boardWrite([note,...S.blackboard]);
+    _boardInpEl.value=""; _boardInpEl._val=""; _boardInpEl.style.height="";
+    _boardInpEl.focus();
+  }
+
+  bp.innerHTML="";
+  const wrap=mk("div",{cls:"body",id:"board-wrap"},
+    mk("div",{cls:"board-input-row"},_boardInpEl,addBtn),
+    mk("div",{id:"board-list-wrap"})
+  );
+  bp.append(wrap);
+  rebuildBoard();
+}
+
+function rebuildBoard(){
+  const wrap=el("board-list-wrap"); if(!wrap) return;
+  wrap.innerHTML="";
+
+  if(!S.blackboard.length){
+    wrap.append(mk("p",{cls:"empty"},"Board is empty."));
+    return;
+  }
+
+  const listEl=mk("div",{id:"board-list"});
+  let dragSrc=null;
+
+  S.blackboard.forEach(note=>{
+    const isMine=note.person===S.user;
+    const color=note.color||"";
+    const row=mk("div",{cls:"board-note"+(color?" "+color:"")});
+    row.dataset.id=note.id;
+
+    // drag handle
+    const handle=mk("span",{cls:"board-note-handle"},"⠿");
+    handle.addEventListener("touchstart",e=>{
+      e.stopPropagation();
+      dragSrc=row;
+      row.classList.add("dragging");
+    },{passive:true});
+
+    // text area — collapsed by default
+    let expanded=false;
+    let editing=false;
+
+    const textEl=mk("div",{cls:"board-note-text"},note.text);
+
+    const metaEl=mk("div",{cls:"board-note-meta"},
+      (note.person===S.user?"You":note.person)+" · "+fmtDate(note.createdAt.slice(0,10))
+    );
+
+    const moreBtn=mk("button",{cls:"board-more"},"more");
+    const actionsRow=mk("div",{cls:"board-note-actions"},moreBtn);
+
+    // check if text is actually truncated — show "more" only if needed
+    // we use a flag since we can't measure before append; show by default, hide after render
+    moreBtn.style.display="";
+
+    moreBtn.addEventListener("click",()=>{
+      if(!expanded){
+        expanded=true;
+        textEl.classList.add("expanded");
+        moreBtn.textContent="less";
+      } else {
+        expanded=false;
+        textEl.classList.remove("expanded");
+        moreBtn.textContent="more";
+      }
+    });
+
+    // tap text to edit (own notes only)
+    if(isMine){
+      textEl.addEventListener("click",()=>{
+        if(editing) return;
+        editing=true;
+        expanded=true;
+        const ta=mk("textarea",{cls:"board-note-text editing"});
+        ta.value=note.text;
+        ta.style.height="auto";
+        setTimeout(()=>{ta.style.height=ta.scrollHeight+"px";},0);
+        ta.addEventListener("input",e=>{
+          e.target.style.height="auto";
+          e.target.style.height=e.target.scrollHeight+"px";
+        });
+        ta.addEventListener("blur",async()=>{
+          const newText=ta.value.trim();
+          editing=false;
+          if(newText&&newText!==note.text){
+            await boardWrite(S.blackboard.map(n=>n.id===note.id?{...n,text:newText}:n));
+          } else {
+            rebuildBoard();
+          }
+        });
+        textEl.replaceWith(ta);
+        ta.focus();
+        moreBtn.style.display="none";
+      });
+    }
+
+    // color swipe (own notes only)
+    if(isMine){
+      let swipeX=null;
+      row.addEventListener("touchstart",e=>{
+        if(e.target===handle) return;
+        swipeX=e.touches[0].clientX;
+      },{passive:true});
+      row.addEventListener("touchend",e=>{
+        if(swipeX===null||e.target===handle) return;
+        const dx=e.changedTouches[0].clientX-swipeX;
+        if(Math.abs(dx)<40){swipeX=null;return;}
+        const cur=BOARD_COLORS.indexOf(note.color||"");
+        const next=dx>0?(cur+1)%BOARD_COLORS.length:(cur-1+BOARD_COLORS.length)%BOARD_COLORS.length;
+        swipeX=null;
+        boardWrite(S.blackboard.map(n=>n.id===note.id?{...n,color:BOARD_COLORS[next]}:n));
+      },{passive:true});
+    }
+
+    const noteBody=mk("div",{cls:"board-note-body"},textEl,metaEl,actionsRow);
+
+    const del=isMine?mk("button",{cls:"board-del",onClick:async()=>{
+      await boardWrite(S.blackboard.filter(n=>n.id!==note.id));
+    }},"×"):null;
+
+    row.append(handle,noteBody);
+    if(del) row.append(del);
+    listEl.append(row);
+  });
+
+  // drag touchmove/end
+  listEl.addEventListener("touchmove",e=>{
+    if(!dragSrc) return;
+    e.preventDefault();
+    const touch=e.touches[0];
+    const els=[...listEl.querySelectorAll(".board-note:not(.dragging)")];
+    els.forEach(el=>el.classList.remove("drag-over"));
+    const target=els.find(el=>{const r=el.getBoundingClientRect();return touch.clientY>=r.top&&touch.clientY<=r.bottom;});
+    if(target) target.classList.add("drag-over");
+  },{passive:false});
+
+  listEl.addEventListener("touchend",async()=>{
+    if(!dragSrc) return;
+    dragSrc.classList.remove("dragging");
+    const over=listEl.querySelector(".drag-over");
+    if(over&&over!==dragSrc){
+      over.classList.remove("drag-over");
+      const ids=S.blackboard.map(n=>n.id);
+      const srcIdx=ids.indexOf(dragSrc.dataset.id);
+      const tgtIdx=ids.indexOf(over.dataset.id);
+      const reordered=[...S.blackboard];
+      const [moved]=reordered.splice(srcIdx,1);
+      reordered.splice(tgtIdx,0,moved);
+      await boardWrite(reordered);
     } else {
       listEl.querySelectorAll(".drag-over").forEach(el=>el.classList.remove("drag-over"));
     }
