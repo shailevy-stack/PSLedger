@@ -270,7 +270,7 @@ let _shopDirty=false;
 async function shopWrite(newShopping){
   S.shopping=newShopping;
   _shopDirty=true;
-  refreshShopping();
+  rebuildShopList();
   updateShopDot();
 }
 async function shopCommit(){
@@ -360,7 +360,7 @@ function buildPick(){
       ),
       mk("div",{style:"margin-top:36px;padding-top:20px;border-top:1px solid var(--border-d);"},
         mk("button",{cls:"reset-btn",style:"display:block;margin:0 auto;",onClick:()=>window.location.reload()},"↻ Reload app"),
-        mk("div",{style:"font-size:11px;color:#bbb;letter-spacing:0.08em;margin-top:8px;"},"v2.8"),
+        mk("div",{style:"font-size:11px;color:#bbb;letter-spacing:0.08em;margin-top:8px;"},"v2.9"),
       ),
     )
   );
@@ -479,7 +479,7 @@ function buildApp(){
   // ── Shell ─────────────────────────────────────────────────────────────────
   const header=mk("div",{cls:"header"},
     mk("div",{cls:"header-left"},mk("span",{style:"font-size:18px"},"❤️"),mk("span",{cls:"header-title"},"PS Central")),
-    mk("button",{cls:"user-badge",onClick:()=>{ls.del("lb_user");S.user="";appShell=null;logForm=null;if(pollTimer)clearInterval(pollTimer);renderRoot();}},S.user+" ↩"),
+    mk("button",{cls:"user-badge",onClick:()=>{ls.del("lb_user");S.user="";appShell=null;logForm=null;_shopInpEl=null;if(pollTimer)clearInterval(pollTimer);renderRoot();}},S.user+" ↩"),
   );
 
   // ── Section bar ───────────────────────────────────────────────────────────
@@ -732,39 +732,55 @@ function refreshInsights(){
 }
 
 const SHOP_COLORS=["","c-gold","c-blue","c-green"];
+let _shopInpEl=null; // kept alive across refreshes
 
 function refreshShopping(){
   const sp=el("section-shopping"); if(!sp) return;
-  sp.innerHTML="";
-  const wrap=mk("div",{cls:"body"});
 
-  // input row
-  let newItem="";
-  const inp=mk("input",{cls:"shop-input",type:"text",placeholder:"Add item…",
-    style:"width:100%;",
-    onInput:e=>newItem=e.target.value,
-    onKeydown:e=>{
-      if(e.key==="Enter"){
-        e.preventDefault();
-        if(newItem.trim()) addItem();
-      }
-    },
-    onBlur:()=>{
+  // ── Build input row once, never rebuild ───────────────────────────────────
+  if(!_shopInpEl){
+    let newItem="";
+    _shopInpEl=mk("input",{cls:"shop-input",type:"text",placeholder:"Add item…",
+      onInput:e=>newItem=e.target.value,
+      onKeydown:e=>{if(e.key==="Enter"&&newItem.trim()){addItem();}}
+    });
+    const addBtn=mk("button",{cls:"shop-add-btn",type:"button",onClick:()=>addItem()},"+");
+    const doneBtn=mk("button",{cls:"shop-done-btn",type:"button",onClick:()=>{
       if(newItem.trim()) addItem();
+      _shopInpEl.blur();
       shopCommit();
+    }},"✓");
+    async function addItem(){
+      if(!newItem.trim()) return;
+      const item={id:Date.now().toString(),text:newItem.trim(),done:false,color:"",createdAt:new Date().toISOString()};
+      S.shopping=[item,...S.shopping];
+      _shopDirty=true;
+      updateShopDot();
+      rebuildShopList();
+      _shopInpEl.value=""; newItem="";
+      // keep focus so keyboard stays open
+      setTimeout(()=>_shopInpEl.focus(),0);
     }
-  });
-  async function addItem(){
-    if(!newItem.trim()) return;
-    const item={id:Date.now().toString(),text:newItem.trim(),done:false,color:"",createdAt:new Date().toISOString()};
-    await shopWrite([item,...S.shopping]);
-    inp.value=""; newItem="";
+    const inputRow=mk("div",{cls:"shop-input-row"},_shopInpEl,addBtn,doneBtn);
+    inputRow.id="shop-input-row";
+
+    sp.innerHTML="";
+    const wrap=mk("div",{cls:"body",id:"shop-wrap"},inputRow,mk("div",{id:"shop-list-wrap"}));
+    sp.append(wrap);
   }
-  wrap.append(mk("div",{cls:"shop-input-row"},inp));
 
-  if(!S.shopping.length){ wrap.append(mk("p",{cls:"empty"},"Nothing on the list.")); sp.append(wrap); return; }
+  rebuildShopList();
+}
 
-  // undone first, done at bottom — preserve manual order within each group
+function rebuildShopList(){
+  const wrap=el("shop-list-wrap"); if(!wrap) return;
+  wrap.innerHTML="";
+
+  if(!S.shopping.length){
+    wrap.append(mk("p",{cls:"empty"},"Nothing on the list."));
+    return;
+  }
+
   const ordered=[...S.shopping.filter(i=>!i.done),...S.shopping.filter(i=>i.done)];
   const listEl=mk("div",{id:"shop-list"});
   let dragSrc=null;
@@ -774,7 +790,6 @@ function refreshShopping(){
     const row=mk("div",{cls:"shop-item"+(item.done?" done":"")+(color?" "+color:"")});
     row.dataset.id=item.id;
 
-    // drag handle
     const handle=mk("span",{cls:"shop-handle"},"⠿");
     handle.addEventListener("touchstart",e=>{
       e.stopPropagation();
@@ -782,7 +797,6 @@ function refreshShopping(){
       row.classList.add("dragging");
     },{passive:true});
 
-    // check
     const check=mk("div",{cls:"shop-check",onClick:async()=>{
       await shopWrite(S.shopping.map(x=>x.id===item.id?{...x,done:!x.done}:x));
     }},item.done?"✓":"");
@@ -792,7 +806,6 @@ function refreshShopping(){
       await shopWrite(S.shopping.filter(x=>x.id!==item.id));
     }},"×");
 
-    // color swipe
     let swipeStartX=null;
     row.addEventListener("touchstart",e=>{
       if(e.target===handle) return;
@@ -803,9 +816,7 @@ function refreshShopping(){
       const dx=e.changedTouches[0].clientX-swipeStartX;
       if(Math.abs(dx)<40){swipeStartX=null;return;}
       const cur=SHOP_COLORS.indexOf(item.color||"");
-      const next=dx>0
-        ?(cur+1)%SHOP_COLORS.length
-        :(cur-1+SHOP_COLORS.length)%SHOP_COLORS.length;
+      const next=dx>0?(cur+1)%SHOP_COLORS.length:(cur-1+SHOP_COLORS.length)%SHOP_COLORS.length;
       swipeStartX=null;
       shopWrite(S.shopping.map(x=>x.id===item.id?{...x,color:SHOP_COLORS[next]}:x));
     },{passive:true});
@@ -814,7 +825,6 @@ function refreshShopping(){
     listEl.append(row);
   });
 
-  // drag touchmove/end
   listEl.addEventListener("touchmove",e=>{
     if(!dragSrc) return;
     e.preventDefault();
@@ -845,7 +855,6 @@ function refreshShopping(){
   });
 
   wrap.append(listEl);
-  sp.append(wrap);
 }
 
 // ── Boot ──────────────────────────────────────────────────────────────────────
