@@ -54,15 +54,15 @@
     .date-group { font-size:11px; text-transform:uppercase; letter-spacing:.12em; color:var(--ink-light); margin-top:16px; margin-bottom:6px; border-bottom:1px solid var(--border-d); padding-bottom:4px; }
     .expense-row { display:flex; align-items:center; justify-content:space-between; padding:11px 12px; border-radius:8px; margin-bottom:6px; background:var(--card); border:1px solid var(--border-d); }
     .expense-row.editing { background:#f5f5f2; border-color:#bbb; }
-    .edit-form { display:flex; flex-direction:column; gap:8px; padding:4px 0; width:100%; }
+    .edit-form { display:flex; flex-direction:column; gap:8px; padding:4px 0; width:100%; max-width:100%; box-sizing:border-box; }
     .edit-row-inputs { display:flex; gap:6px; }
-    .edit-amt { font-size:15px; font-family:'Georgia',serif; border:1px solid var(--border); border-radius:6px; background:var(--card); color:var(--ink); padding:7px 10px; width:80px; outline:none; }
-    .edit-desc { font-size:15px; font-family:'Georgia',serif; border:1px solid var(--border); border-radius:6px; background:var(--card); color:var(--ink); padding:7px 10px; flex:1; outline:none; }
-    .edit-cat { font-size:13px; font-family:'Georgia',serif; border:1px solid var(--border); border-radius:6px; background:var(--card); color:var(--ink); padding:7px 10px; width:100%; outline:none; }
+    .edit-amt { font-size:16px; font-family:'Georgia',serif; border:1px solid var(--border); border-radius:6px; background:var(--card); color:var(--ink); padding:7px 10px; width:80px; outline:none; }
+    .edit-desc { font-size:16px; font-family:'Georgia',serif; border:1px solid var(--border); border-radius:6px; background:var(--card); color:var(--ink); padding:7px 10px; flex:1; outline:none; }
+    .edit-cat { font-size:16px; font-family:'Georgia',serif; border:1px solid var(--border); border-radius:6px; background:var(--card); color:var(--ink); padding:7px 10px; width:100%; outline:none; }
     .edit-date-row { display:flex; gap:6px; align-items:center; }
-    .edit-date-tab { flex:1; padding:6px; border:1px solid var(--border); border-radius:6px; background:transparent; color:var(--ink-light); font-size:12px; font-family:inherit; cursor:pointer; text-align:center; }
+    .edit-date-tab { flex:1; padding:6px; border:1px solid var(--border); border-radius:6px; background:transparent; color:var(--ink-light); font-size:16px; font-family:inherit; cursor:pointer; text-align:center; }
     .edit-date-tab.active { background:var(--ink); color:#f5f0e8; border-color:var(--ink); }
-    .edit-date-display { font-size:13px; color:var(--ink-light); padding:4px 0; }
+    .edit-date-display { font-size:16px; color:var(--ink-light); padding:4px 0; }
     .edit-actions { display:flex; gap:6px; }
     .edit-save { flex:1; padding:8px; background:var(--ink); color:#f5f0e8; border:none; border-radius:6px; font-size:13px; font-family:inherit; cursor:pointer; }
     .edit-cancel { padding:8px 14px; background:none; border:1px solid var(--border); color:var(--ink-light); border-radius:6px; font-size:13px; font-family:inherit; cursor:pointer; }
@@ -288,7 +288,7 @@ function buildPick(){
       ),
       mk("div",{style:"margin-top:36px;padding-top:20px;border-top:1px solid var(--border-d);"},
         mk("button",{cls:"reset-btn",style:"display:block;margin:0 auto;",onClick:()=>window.location.reload()},"↻ Reload app"),
-        mk("div",{style:"font-size:11px;color:#bbb;letter-spacing:0.08em;margin-top:8px;"},"v1.8"),
+        mk("div",{style:"font-size:11px;color:#bbb;letter-spacing:0.08em;margin-top:8px;"},"v1.9"),
       ),
     )
   );
