@@ -270,7 +270,7 @@ async function load(quiet=false){
       } else if(!lastClear) ls.set("shop_clear_date",today);
     };
     midnight_clear();
-    if(_lastSeenShoppingHash===""){ 
+    if(_lastSeenShoppingHash===null){ 
       // first load — set baseline
       _lastSeenShoppingHash=newHash;
       refreshShopping();
@@ -330,7 +330,7 @@ async function shopCommit(){
 
 // ── Ledger state ──────────────────────────────────────────────────────────────
 let _lastSeenExpenseCount=0;
-let _lastSeenShoppingHash="";
+let _lastSeenShoppingHash=null;
 function startPoll(){if(pollTimer)clearInterval(pollTimer);pollTimer=setInterval(()=>load(true),20000);}
 
 // ── Root renderer — decides which top-level screen to show ───────────────────
@@ -400,7 +400,7 @@ function buildPick(){
       ),
       mk("div",{style:"margin-top:36px;padding-top:20px;border-top:1px solid var(--border-d);"},
         mk("button",{cls:"reset-btn",style:"display:block;margin:0 auto;",onClick:()=>window.location.reload()},"↻ Reload app"),
-        mk("div",{style:"font-size:11px;color:#bbb;letter-spacing:0.08em;margin-top:8px;"},"v3.3"),
+        mk("div",{style:"font-size:11px;color:#bbb;letter-spacing:0.08em;margin-top:8px;"},"v3.4"),
       ),
     )
   );
@@ -519,7 +519,7 @@ function buildApp(){
   // ── Shell ─────────────────────────────────────────────────────────────────
   const header=mk("div",{cls:"header"},
     mk("div",{cls:"header-left"},mk("span",{style:"font-size:18px"},"❤️"),mk("span",{cls:"header-title"},"PS Central")),
-    mk("button",{cls:"user-badge",onClick:()=>{ls.del("lb_user");S.user="";appShell=null;logForm=null;_shopInpEl=null;if(pollTimer)clearInterval(pollTimer);renderRoot();}},S.user+" ↩"),
+    mk("button",{cls:"user-badge",onClick:()=>{ls.del("lb_user");S.user="";appShell=null;logForm=null;_shopInpEl=null;_shopDirty=false;_lastSeenShoppingHash=null;_lastSeenExpenseCount=0;if(pollTimer)clearInterval(pollTimer);renderRoot();}},S.user+" ↩"),
   );
 
   // ── Section bar ───────────────────────────────────────────────────────────
@@ -821,6 +821,9 @@ function refreshShopping(){
       rebuildShopList();
       _shopInpEl.value=""; newItem="";
       setTimeout(()=>_shopInpEl.focus(),0);
+      // start auto-save timer
+      if(_shopAutoTimer) clearTimeout(_shopAutoTimer);
+      _shopAutoTimer=setTimeout(()=>shopCommit(),10000);
     }
     const inputRow=mk("div",{cls:"shop-input-row"},_shopInpEl);
     inputRow.id="shop-input-row";
