@@ -463,7 +463,7 @@ function buildPick(){
       ),
       mk("div",{style:"margin-top:36px;padding-top:20px;border-top:1px solid var(--border-d);"},
         mk("button",{cls:"reset-btn",style:"display:block;margin:0 auto;",onClick:()=>window.location.reload()},"↻ Reload app"),
-        mk("div",{style:"font-size:11px;color:#bbb;letter-spacing:0.08em;margin-top:8px;"},"v3.6"),
+        mk("div",{style:"font-size:11px;color:#bbb;letter-spacing:0.08em;margin-top:8px;"},"v3.7"),
       ),
     )
   );
@@ -939,7 +939,7 @@ function rebuildShopList(){
     }},item.done?"✓":"");
 
     const text=mk("span",{cls:"shop-text"},item.text);
-    const del=mk("button",{cls:"shop-del",onClick:async()=>{
+    const del=mk("button",{cls:"board-del",onClick:async()=>{
       await shopWrite(S.shopping.filter(x=>x.id!==item.id));
     }},"×");
 
@@ -1069,10 +1069,7 @@ function rebuildBoard(){
 
     const moreBtn=mk("button",{cls:"board-more"},"more");
     const actionsRow=mk("div",{cls:"board-note-actions"},moreBtn);
-
-    // check if text is actually truncated — show "more" only if needed
-    // we use a flag since we can't measure before append; show by default, hide after render
-    moreBtn.style.display="";
+    moreBtn.style.display="none"; // hidden until we measure
 
     moreBtn.addEventListener("click",()=>{
       if(!expanded){
@@ -1175,6 +1172,14 @@ function rebuildBoard(){
   });
 
   wrap.append(listEl);
+
+  // show "more" only on notes that are actually clamped
+  requestAnimationFrame(()=>{
+    listEl.querySelectorAll(".board-note-text").forEach(t=>{
+      const btn=t.closest(".board-note-body")?.querySelector(".board-more");
+      if(btn && t.scrollHeight>t.clientHeight+2) btn.style.display="";
+    });
+  });
 }
 
 // ── Boot ──────────────────────────────────────────────────────────────────────
