@@ -44,6 +44,9 @@
     .shop-item.done .shop-check { background:var(--ink); border-color:var(--ink); color:#f5f0e8; }
     .shop-text { flex:1; font-size:16px; color:var(--ink); }
     .shop-item.done .shop-text { text-decoration:line-through; color:var(--ink-light); }
+    .shop-handle { color:#ccc; font-size:18px; cursor:grab; padding:2px 8px 2px 0; touch-action:none; flex-shrink:0; user-select:none; }
+    .shop-item.dragging { opacity:.35; background:#f0ede4; }
+    .shop-item.drag-over { border-top:2px solid var(--gold); margin-top:-2px; }
     #section-shopping, #section-blackboard { display:none; flex:1; }
     #section-shopping.active, #section-blackboard.active { display:block; }
 
@@ -226,7 +229,21 @@ async function load(quiet=false){
     S.shopping=Array.isArray(r.shopping)?r.shopping:[];
     S.loading=false;S.loadErr="";
   }catch(e){S.loading=false;S.loadErr=e.message;}
-  refreshHistory(); refreshBalance(); refreshInsights(); refreshShopping();
+  refreshHistory(); refreshBalance(); refreshInsights();
+  // midnight clear — only on load, not on every render
+  const today=todayStr();
+  const lastClear=ls.get("shop_clear_date");
+  if(lastClear && lastClear!==today){
+    const cleared=S.shopping.filter(i=>!i.done);
+    if(cleared.length!==S.shopping.length){
+      S.shopping=cleared;
+      apiWrite(S.url,{expenses:S.expenses,memory:S.memory,shopping:cleared});
+    }
+    ls.set("shop_clear_date",today);
+  } else if(!lastClear){
+    ls.set("shop_clear_date",today);
+  }
+  refreshShopping();
   if(updateLogBtn) updateLogBtn();
 }
 async function freshWrite(fn){
@@ -316,7 +333,7 @@ function buildPick(){
       ),
       mk("div",{style:"margin-top:36px;padding-top:20px;border-top:1px solid var(--border-d);"},
         mk("button",{cls:"reset-btn",style:"display:block;margin:0 auto;",onClick:()=>window.location.reload()},"↻ Reload app"),
-        mk("div",{style:"font-size:11px;color:#bbb;letter-spacing:0.08em;margin-top:8px;"},"v2.0"),
+        mk("div",{style:"font-size:11px;color:#bbb;letter-spacing:0.08em;margin-top:8px;"},"v2.2"),
       ),
     )
   );
@@ -703,37 +720,77 @@ function refreshShopping(){
   }
   wrap.append(mk("div",{cls:"shop-input-row"},inp,addBtn));
 
-  // midnight auto-clear check
-  const today=todayStr();
-  const lastClear=ls.get("shop_clear_date");
-  if(lastClear && lastClear!==today){
-    const cleared=S.shopping.filter(i=>!i.done);
-    if(cleared.length!==S.shopping.length){
-      shopWrite(cleared);
-      ls.set("shop_clear_date",today);
-      return;
-    }
-  }
-  if(!lastClear) ls.set("shop_clear_date",today);
+  if(!S.shopping.length){ wrap.append(mk("p",{cls:"empty"},"Nothing on the list.")); sp.append(wrap); return; }
 
-  // item list — undone first, done at bottom
-  const undone=S.shopping.filter(i=>!i.done);
-  const done=S.shopping.filter(i=>i.done);
-  [...undone,...done].forEach(item=>{
+  // undone first, done at bottom
+  const ordered=[...S.shopping.filter(i=>!i.done),...S.shopping.filter(i=>i.done)];
+  const listEl=mk("div",{id:"shop-list"});
+
+  let dragSrc=null;
+
+  ordered.forEach(item=>{
     const row=mk("div",{cls:"shop-item"+(item.done?" done":"")});
+    row.dataset.id=item.id;
+
+    // drag handle
+    const handle=mk("span",{cls:"shop-handle"},"⠿");
+    handle.addEventListener("touchstart",e=>{
+      e.stopPropagation();
+      dragSrc=row;
+      row.classList.add("dragging");
+    },{passive:true});
+
     const check=mk("div",{cls:"shop-check",onClick:async()=>{
       const updated=S.shopping.map(x=>x.id===item.id?{...x,done:!x.done}:x);
       await shopWrite(updated);
     }},item.done?"✓":"");
+
     const text=mk("span",{cls:"shop-text"},item.text);
+
     const del=mk("button",{cls:"shop-del",onClick:async()=>{
       await shopWrite(S.shopping.filter(x=>x.id!==item.id));
     }},"×");
-    row.append(check,text,del);
-    wrap.append(row);
+
+    row.append(handle,check,text,del);
+    listEl.append(row);
   });
 
-  if(!S.shopping.length) wrap.append(mk("p",{cls:"empty"},"Nothing on the list."));
+  // touch move/end on the list container
+  listEl.addEventListener("touchmove",e=>{
+    if(!dragSrc) return;
+    e.preventDefault();
+    const touch=e.touches[0];
+    const els=[...listEl.querySelectorAll(".shop-item:not(.dragging)")];
+    els.forEach(el=>el.classList.remove("drag-over"));
+    const target=els.find(el=>{
+      const r=el.getBoundingClientRect();
+      return touch.clientY>=r.top && touch.clientY<=r.bottom;
+    });
+    if(target) target.classList.add("drag-over");
+  },{passive:false});
+
+  listEl.addEventListener("touchend",async e=>{
+    if(!dragSrc) return;
+    dragSrc.classList.remove("dragging");
+    const over=listEl.querySelector(".drag-over");
+    if(over && over!==dragSrc){
+      over.classList.remove("drag-over");
+      // reorder S.shopping
+      const ids=ordered.map(i=>i.id);
+      const srcIdx=ids.indexOf(dragSrc.dataset.id);
+      const tgtIdx=ids.indexOf(over.dataset.id);
+      const reordered=[...ordered];
+      const [moved]=reordered.splice(srcIdx,1);
+      reordered.splice(tgtIdx,0,moved);
+      // merge back with original order (preserving any items not in ordered)
+      await shopWrite(reordered);
+    } else {
+      listEl.querySelectorAll(".drag-over").forEach(el=>el.classList.remove("drag-over"));
+    }
+    dragSrc=null;
+  });
+
+  wrap.append(listEl);
   sp.append(wrap);
 }
 
