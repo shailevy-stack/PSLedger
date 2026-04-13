@@ -601,7 +601,7 @@ function buildApp(){
 
   const nav=mk("div",{cls:"nav"},...tabs.map(([v,l])=>{
     const b=mk("button",{cls:"nav-btn"+(v==="log"?" active":""),onClick:()=>switchTab(v)},
-      v==="history"?mk("span",{style:"display:flex;align-items:center;gap:4px;"},l,histDot):l
+      v==="history"?mk("span",{style:"display:flex;align-items:center;justify-content:center;gap:4px;"},l,histDot):l
     );
     navBtns[v]=b; return b;
   }));
