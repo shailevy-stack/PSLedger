@@ -34,8 +34,8 @@
     .nav-btn { flex:1; background:none; border:none; color:#c4b89a; padding:11px 0; font-size:13px; cursor:pointer; font-family:inherit; letter-spacing:.02em; border-bottom:2px solid transparent; }
     .nav-btn.active { color:#f5f0e8; background:var(--ink); border-bottom:2px solid var(--gold); }
 
-    .shop-sync-dot { width:8px; height:8px; border-radius:50%; background:transparent; display:inline-block; margin-left:6px; transition:background .3s; flex-shrink:0; vertical-align:middle; }
-    .shop-sync-dot.saving { background:var(--gold); animation:pulse .5s infinite alternate; }
+    .shop-sync-dot { width:8px; height:8px; border-radius:50%; background:#555; display:inline-block; margin-left:6px; transition:background .3s; flex-shrink:0; vertical-align:middle; }
+    .shop-sync-dot.dirty { background:var(--gold); animation:pulse .5s infinite alternate; }
     .shop-sync-dot.saved { background:var(--green); animation:none; }
     @keyframes pulse { from{opacity:1} to{opacity:.2} }
     .shop-input-row { display:flex; gap:8px; margin-bottom:16px; }
@@ -252,6 +252,7 @@ async function load(quiet=false){
     ls.set("shop_clear_date",today);
   }
   refreshShopping();
+  const d=el("shop-sync-dot"); if(d&&!_shopDirty) d.className="shop-sync-dot saved";
   if(updateLogBtn) updateLogBtn();
 }
 async function freshWrite(fn){
@@ -274,24 +275,21 @@ async function shopWrite(newShopping){
 }
 async function shopCommit(){
   if(!_shopDirty) return;
-  const dot=el("shop-sync-dot");
-  if(dot) dot.className="shop-sync-dot saving";
+  updateShopDot(); // show dirty/pulsing while writing
   try{
     await apiWrite(S.url,{expenses:S.expenses,memory:S.memory,shopping:S.shopping});
     _shopDirty=false;
     const d=el("shop-sync-dot");
-    if(d){d.className="shop-sync-dot saved";setTimeout(()=>{if(d&&!_shopDirty)d.className="shop-sync-dot";},2000);}
+    if(d) d.className="shop-sync-dot saved";
   }catch(e){
-    const d=el("shop-sync-dot");
-    if(d) d.className="shop-sync-dot saving"; // stay gold if failed
+    updateShopDot(); // back to dirty if failed
     alert("Save failed: "+e.message);
   }
 }
 function updateShopDot(){
   const dot=el("shop-sync-dot");
   if(!dot) return;
-  if(_shopDirty) dot.className="shop-sync-dot saving";
-  else dot.className="shop-sync-dot";
+  dot.className="shop-sync-dot"+(_shopDirty?" dirty":" saved");
 }
 function startPoll(){if(pollTimer)clearInterval(pollTimer);pollTimer=setInterval(()=>load(true),20000);}
 
@@ -362,7 +360,7 @@ function buildPick(){
       ),
       mk("div",{style:"margin-top:36px;padding-top:20px;border-top:1px solid var(--border-d);"},
         mk("button",{cls:"reset-btn",style:"display:block;margin:0 auto;",onClick:()=>window.location.reload()},"↻ Reload app"),
-        mk("div",{style:"font-size:11px;color:#bbb;letter-spacing:0.08em;margin-top:8px;"},"v2.7"),
+        mk("div",{style:"font-size:11px;color:#bbb;letter-spacing:0.08em;margin-top:8px;"},"v2.8"),
       ),
     )
   );
@@ -743,24 +741,26 @@ function refreshShopping(){
   // input row
   let newItem="";
   const inp=mk("input",{cls:"shop-input",type:"text",placeholder:"Add item…",
+    style:"width:100%;",
     onInput:e=>newItem=e.target.value,
-    onKeydown:e=>{if(e.key==="Enter"&&newItem.trim()){addItem();}}
+    onKeydown:e=>{
+      if(e.key==="Enter"){
+        e.preventDefault();
+        if(newItem.trim()) addItem();
+      }
+    },
+    onBlur:()=>{
+      if(newItem.trim()) addItem();
+      shopCommit();
+    }
   });
-  const addBtn=mk("button",{cls:"shop-add-btn",type:"button",onClick:()=>addItem()},"+");
-  const doneBtn=mk("button",{cls:"shop-done-btn",type:"button",onClick:()=>{
-    if(newItem.trim()) addItem();
-    inp.blur();
-    shopCommit();
-  }},"✓");
   async function addItem(){
     if(!newItem.trim()) return;
     const item={id:Date.now().toString(),text:newItem.trim(),done:false,color:"",createdAt:new Date().toISOString()};
     await shopWrite([item,...S.shopping]);
     inp.value=""; newItem="";
-    // keep focus so keyboard stays up
-    inp.focus();
   }
-  wrap.append(mk("div",{cls:"shop-input-row"},inp,addBtn,doneBtn));
+  wrap.append(mk("div",{cls:"shop-input-row"},inp));
 
   if(!S.shopping.length){ wrap.append(mk("p",{cls:"empty"},"Nothing on the list.")); sp.append(wrap); return; }
 
