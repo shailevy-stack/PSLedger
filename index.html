@@ -53,7 +53,21 @@
 
     .date-group { font-size:11px; text-transform:uppercase; letter-spacing:.12em; color:var(--ink-light); margin-top:16px; margin-bottom:6px; border-bottom:1px solid var(--border-d); padding-bottom:4px; }
     .expense-row { display:flex; align-items:center; justify-content:space-between; padding:11px 12px; border-radius:8px; margin-bottom:6px; background:var(--card); border:1px solid var(--border-d); }
-    .expense-row.mine { border-left:3px solid var(--gold); }
+    .expense-row.editing { background:#f5f5f2; border-color:#bbb; }
+    .edit-form { display:flex; flex-direction:column; gap:8px; padding:4px 0; width:100%; }
+    .edit-row-inputs { display:flex; gap:6px; }
+    .edit-amt { font-size:15px; font-family:'Georgia',serif; border:1px solid var(--border); border-radius:6px; background:var(--card); color:var(--ink); padding:7px 10px; width:80px; outline:none; }
+    .edit-desc { font-size:15px; font-family:'Georgia',serif; border:1px solid var(--border); border-radius:6px; background:var(--card); color:var(--ink); padding:7px 10px; flex:1; outline:none; }
+    .edit-cat { font-size:13px; font-family:'Georgia',serif; border:1px solid var(--border); border-radius:6px; background:var(--card); color:var(--ink); padding:7px 10px; width:100%; outline:none; }
+    .edit-date-row { display:flex; gap:6px; align-items:center; }
+    .edit-date-tab { flex:1; padding:6px; border:1px solid var(--border); border-radius:6px; background:transparent; color:var(--ink-light); font-size:12px; font-family:inherit; cursor:pointer; text-align:center; }
+    .edit-date-tab.active { background:var(--ink); color:#f5f0e8; border-color:var(--ink); }
+    .edit-date-display { font-size:13px; color:var(--ink-light); padding:4px 0; }
+    .edit-actions { display:flex; gap:6px; }
+    .edit-save { flex:1; padding:8px; background:var(--ink); color:#f5f0e8; border:none; border-radius:6px; font-size:13px; font-family:inherit; cursor:pointer; }
+    .edit-cancel { padding:8px 14px; background:none; border:1px solid var(--border); color:var(--ink-light); border-radius:6px; font-size:13px; font-family:inherit; cursor:pointer; }
+    .expense-row.saving { opacity:0.5; filter:grayscale(1); transition:opacity 0.2s, filter 0.2s; }
+    .expense-row.save-done { opacity:1; filter:grayscale(0); transition:opacity 0.4s, filter 0.4s; }
     .expense-row.theirs { border-left:3px solid var(--blue); }
     .expense-left { display:flex; align-items:center; gap:10px; }
     .expense-cat { font-size:22px; }
@@ -274,7 +288,7 @@ function buildPick(){
       ),
       mk("div",{style:"margin-top:36px;padding-top:20px;border-top:1px solid var(--border-d);"},
         mk("button",{cls:"reset-btn",style:"display:block;margin:0 auto;",onClick:()=>window.location.reload()},"↻ Reload app"),
-        mk("div",{style:"font-size:11px;color:#bbb;letter-spacing:0.08em;margin-top:8px;"},"v1.6"),
+        mk("div",{style:"font-size:11px;color:#bbb;letter-spacing:0.08em;margin-top:8px;"},"v1.7"),
       ),
     )
   );
@@ -429,16 +443,91 @@ function refreshHistory(){
     items.sort((a,b)=>b.createdAt.localeCompare(a.createdAt));
     hb.append(mk("div",{cls:"date-group"},fmtDate(date)));
     items.forEach(e=>{
-      hb.append(mk("div",{cls:"expense-row "+(e.person===S.user?"mine":"theirs")},
-        mk("div",{cls:"expense-left"},
-          mk("span",{cls:"expense-cat"},e.category.split(" ")[0]),
-          mk("div",{},mk("div",{cls:"expense-desc"},e.description),mk("div",{cls:"expense-person"},e.person===S.user?"You":e.person)),
-        ),
-        mk("div",{cls:"expense-right"},
-          mk("span",{cls:"expense-amt"},"€"+e.amount.toFixed(2)),
-          e.person===S.user?mk("button",{cls:"delete-btn",onClick:()=>freshWrite((ex,m)=>({expenses:ex.filter(x=>x.id!==e.id),memory:m}))},"×"):null,
-        ),
-      ));
+      const isMine = e.person===S.user;
+      const row = mk("div",{cls:"expense-row "+(isMine?"mine":"theirs"),style:"user-select:none;"});
+
+      function buildNormalView(){
+        row.innerHTML="";
+        row.className="expense-row "+(isMine?"mine":"theirs");
+        row.style.userSelect="none";
+        row.append(
+          mk("div",{cls:"expense-left"},
+            mk("span",{cls:"expense-cat"},e.category.split(" ")[0]),
+            mk("div",{},mk("div",{cls:"expense-desc"},e.description),mk("div",{cls:"expense-person"},isMine?"You":e.person)),
+          ),
+          mk("div",{cls:"expense-right"},
+            mk("span",{cls:"expense-amt"},"€"+e.amount.toFixed(2)),
+            isMine?mk("button",{cls:"delete-btn",onClick:(ev)=>{ev.stopPropagation();freshWrite((ex,m)=>({expenses:ex.filter(x=>x.id!==e.id),memory:m}));}},"×"):null,
+          ),
+        );
+        if(isMine) attachLongPress(row);
+      }
+
+      function attachLongPress(el){
+        let timer=null;
+        el.addEventListener("touchstart",()=>{timer=setTimeout(()=>buildEditView(),600);},{passive:true});
+        el.addEventListener("touchend",()=>{clearTimeout(timer);});
+        el.addEventListener("touchmove",()=>{clearTimeout(timer);});
+      }
+
+      function buildEditView(){
+        row.innerHTML="";
+        row.className="expense-row editing";
+
+        let editAmt=e.amount.toString();
+        let editDesc=e.description;
+        let editCat=e.category;
+        let editDateMode=e.date===todayStr()?"today":"manual";
+        let editDate=e.date;
+
+        const amtIn=mk("input",{cls:"edit-amt",type:"number",value:editAmt,inputmode:"decimal",onInput:ev=>editAmt=ev.target.value});
+        const descIn=mk("input",{cls:"edit-desc",type:"text",value:editDesc,onInput:ev=>editDesc=ev.target.value});
+        const catSel=mk("select",{cls:"edit-cat",onChange:ev=>editCat=ev.target.value},
+          ...CATS.map(c=>Object.assign(mk("option",{value:c},c),{selected:c===editCat}))
+        );
+
+        const dateDisplay=mk("div",{cls:"edit-date-display"},fmtDate(editDate));
+        const editDatePick=mk("input",{type:"date",value:editDate,
+          style:"position:absolute;inset:0;width:100%;height:100%;opacity:0;cursor:pointer;",
+          onChange:ev=>{if(!ev.target.value)return;editDate=ev.target.value;editDateMode="manual";todayTabE.className="edit-date-tab";manualTabE.className="edit-date-tab active";dateDisplay.textContent=fmtDate(ev.target.value);}
+        });
+        const todayTabE=mk("button",{cls:"edit-date-tab"+(editDateMode==="today"?" active":""),type:"button",onClick:()=>{
+          editDateMode="today";editDate=todayStr();
+          todayTabE.className="edit-date-tab active";manualTabE.className="edit-date-tab";
+          dateDisplay.textContent="Today";
+        }},"Today");
+        const manualTabE=mk("div",{cls:"edit-date-tab"+(editDateMode==="manual"?" active":""),style:"position:relative;cursor:pointer;"},"Pick date");
+        manualTabE.appendChild(editDatePick);
+
+        const saveBtn=mk("button",{cls:"edit-save",onClick:async()=>{
+          const amt=parseFloat(editAmt);
+          if(!amt||amt<=0||!editDesc.trim()) return;
+          // collapse to normal view immediately in greyscale
+          e.amount=amt; e.description=editDesc.trim(); e.category=editCat; e.date=editDate;
+          buildNormalView();
+          row.className="expense-row "+(isMine?"mine":"theirs")+" saving";
+          await freshWrite((exps,mem)=>({
+            expenses:exps.map(x=>x.id===e.id?{...x,amount:amt,description:editDesc.trim(),category:editCat,date:editDate}:x)
+                        .sort((a,b)=>b.date.localeCompare(a.date)),
+            memory:mem,
+          }));
+          row.className="expense-row "+(isMine?"mine":"theirs")+" save-done";
+          setTimeout(()=>{row.className="expense-row "+(isMine?"mine":"theirs");},600);
+        }},"✓ Save");
+
+        const cancelBtn=mk("button",{cls:"edit-cancel",onClick:()=>buildNormalView()},"Cancel");
+
+        row.append(mk("div",{cls:"edit-form"},
+          mk("div",{cls:"edit-row-inputs"},amtIn,descIn),
+          catSel,
+          mk("div",{cls:"edit-date-row"},todayTabE,manualTabE),
+          dateDisplay,
+          mk("div",{cls:"edit-actions"},saveBtn,cancelBtn),
+        ));
+      }
+
+      buildNormalView();
+      hb.append(row);
     });
   });
 }
