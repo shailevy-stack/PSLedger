@@ -1007,8 +1007,7 @@ function refreshBoard(){
       _boardInpEl._val=e.target.value;
       e.target.style.height="auto";
       e.target.style.height=e.target.scrollHeight+"px";
-    },
-    onKeydown:e=>{if(e.key==="Enter"&&!e.shiftKey&&_boardInpEl._val&&_boardInpEl._val.trim()){e.preventDefault();addNote();}}
+    }
   });
   _boardInpEl._val="";
 
