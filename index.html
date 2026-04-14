@@ -283,7 +283,7 @@ async function load(quiet=false){
     const lastClear=ls.get("shop_clear_date");
     if(lastClear && lastClear!==today){
       const cleared=S.shopping.filter(i=>!i.done);
-      if(cleared.length!==S.shopping.length){S.shopping=cleared;apiWrite(S.url,{expenses:S.expenses,memory:S.memory,shopping:cleared});}
+      if(cleared.length!==S.shopping.length){S.shopping=cleared;apiWrite(S.url,{expenses:S.expenses,memory:S.memory,shopping:cleared,blackboard:S.blackboard});}
       ls.set("shop_clear_date",today);
     } else if(!lastClear) ls.set("shop_clear_date",today);
 
@@ -463,7 +463,7 @@ function buildPick(){
       ),
       mk("div",{style:"margin-top:36px;padding-top:20px;border-top:1px solid var(--border-d);"},
         mk("button",{cls:"reset-btn",style:"display:block;margin:0 auto;",onClick:()=>window.location.reload()},"↻ Reload app"),
-        mk("div",{style:"font-size:11px;color:#bbb;letter-spacing:0.08em;margin-top:8px;"},"v3.7"),
+        mk("div",{style:"font-size:11px;color:#bbb;letter-spacing:0.08em;margin-top:8px;"},"v3.8"),
       ),
     )
   );
