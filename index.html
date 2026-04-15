@@ -463,7 +463,7 @@ function buildPick(){
       ),
       mk("div",{style:"margin-top:36px;padding-top:20px;border-top:1px solid var(--border-d);"},
         mk("button",{cls:"reset-btn",style:"display:block;margin:0 auto;",onClick:()=>window.location.reload()},"↻ Reload app"),
-        mk("div",{style:"font-size:11px;color:#bbb;letter-spacing:0.08em;margin-top:8px;"},"v3.8"),
+        mk("div",{style:"font-size:11px;color:#bbb;letter-spacing:0.08em;margin-top:8px;"},"v3.9"),
       ),
     )
   );
@@ -566,12 +566,7 @@ function buildApp(){
 
   // ── History panel ─────────────────────────────────────────────────────────
   const histBody=mk("div",{id:"hist-body"});
-  const histPanel=mk("div",{cls:"tab-panel",id:"tab-history"},histBody,
-    mk("div",{cls:"sync-row"},
-      mk("button",{cls:"sync-btn",onClick:()=>load(true)},"↻ Refresh"),
-      mk("span",{cls:"sync-note"},"Auto-refreshes every 20s"),
-    )
-  );
+  const histPanel=mk("div",{cls:"tab-panel",id:"tab-history"},histBody);
 
   // ── Balance panel ─────────────────────────────────────────────────────────
   const balPanel=mk("div",{cls:"tab-panel",id:"tab-balance"});
@@ -582,7 +577,7 @@ function buildApp(){
   // ── Shell ─────────────────────────────────────────────────────────────────
   const header=mk("div",{cls:"header"},
     mk("div",{cls:"header-left"},mk("span",{style:"font-size:18px"},"❤️"),mk("span",{cls:"header-title"},"PS Central")),
-    mk("button",{cls:"user-badge",onClick:()=>{ls.del("lb_user");S.user="";appShell=null;logForm=null;_shopInpEl=null;_boardInpEl=null;_shopDirty=false;_boardDirty=false;_lastSeenShoppingHash=null;_lastSeenBoardHash=null;_lastSeenExpenseCount=0;if(pollTimer)clearInterval(pollTimer);renderRoot();}},S.user+" ↩"),
+    mk("button",{cls:"user-badge",onClick:()=>{ls.del("lb_user");S.user="";appShell=null;logForm=null;_shopInpEl=null;_boardInpEl=null;_shopDirty=false;_boardDirty=false;_lastSeenShoppingHash=null;_lastSeenBoardHash=null;_lastSeenExpenseCount=0;if(pollTimer)clearInterval(pollTimer);renderRoot();}},S.user+" ⚙️"),
   );
 
   // ── Section bar ───────────────────────────────────────────────────────────
@@ -821,18 +816,6 @@ function refreshBalance(){
   );
   if(Math.abs(bal[S.user])>.01)
     bp.append(mk("div",{cls:"verdict"},bal[S.user]>0?`${partner} owes you €${bal[S.user].toFixed(2)}`:`You owe ${partner} €${Math.abs(bal[S.user]).toFixed(2)}`));
-
-  bp.append(mk("div",{style:"margin-top:32px;padding-top:16px;border-top:1px solid var(--border-d);"},
-    mk("button",{
-      style:"background:none;border:1px solid #ccc;color:#bbb;border-radius:6px;padding:6px 14px;font-size:12px;font-family:inherit;cursor:pointer;",
-      onClick:async()=>{
-        if(!confirm("Reset all expenses and data? This cannot be undone.")) return;
-        await apiWrite(S.url,{expenses:[],memory:{}});
-        S.expenses=[]; S.memory={};
-        refreshHistory(); refreshBalance(); refreshInsights();
-      }
-    },"⚠ Reset all data")
-  ));
 }
 
 function refreshInsights(){
@@ -898,7 +881,8 @@ function refreshShopping(){
       if(_shopAutoTimer) clearTimeout(_shopAutoTimer);
       _shopAutoTimer=setTimeout(()=>shopCommit(),10000);
     }
-    const inputRow=mk("div",{cls:"shop-input-row"},_shopInpEl);
+    const addBtn=mk("button",{cls:"shop-add-btn",type:"button",onClick:addItem},"+");
+    const inputRow=mk("div",{cls:"shop-input-row"},_shopInpEl,addBtn);
     inputRow.id="shop-input-row";
 
     sp.innerHTML="";
@@ -939,6 +923,31 @@ function rebuildShopList(){
     }},item.done?"✓":"");
 
     const text=mk("span",{cls:"shop-text"},item.text);
+
+    // long-press on text only → inline edit
+    let lpTimer=null;
+    text.addEventListener("touchstart",e=>{
+      lpTimer=setTimeout(()=>{
+        // build inline edit input
+        const inp=mk("input",{type:"text",value:item.text,
+          style:"font-size:16px;font-family:'Georgia',serif;border:none;background:transparent;outline:none;width:100%;color:var(--ink);",
+        });
+        inp.addEventListener("blur",async()=>{
+          const val=inp.value.trim();
+          if(val&&val!==item.text){
+            await shopWrite(S.shopping.map(x=>x.id===item.id?{...x,text:val}:x));
+          } else {
+            rebuildShopList();
+          }
+        });
+        inp.addEventListener("keydown",e=>{if(e.key==="Enter"){inp.blur();}});
+        text.replaceWith(inp);
+        setTimeout(()=>inp.focus(),0);
+      },600);
+    },{passive:true});
+    text.addEventListener("touchend",()=>clearTimeout(lpTimer));
+    text.addEventListener("touchmove",()=>clearTimeout(lpTimer));
+
     const del=mk("button",{cls:"board-del",onClick:async()=>{
       await shopWrite(S.shopping.filter(x=>x.id!==item.id));
     }},"×");
