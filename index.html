@@ -352,7 +352,15 @@ async function shopCommit(){
   if(!_shopDirty) return;
   setDot("dot-shopping","saving");
   try{
-    await apiWrite(S.url,{expenses:S.expenses,memory:S.memory,shopping:S.shopping,blackboard:S.blackboard});
+    // read current server state first to avoid overwriting other sections
+    const r=await apiRead(S.url);
+    const safe={
+      expenses:Array.isArray(r.expenses)?r.expenses:S.expenses,
+      memory:(r.memory&&typeof r.memory==="object")?r.memory:S.memory,
+      shopping:S.shopping,
+      blackboard:Array.isArray(r.blackboard)?r.blackboard:S.blackboard,
+    };
+    await apiWrite(S.url,safe);
     _shopDirty=false;
     _lastSeenShoppingHash=S.shopping.map(i=>i.id+i.done+i.color).join("|");
     setDot("dot-shopping","synced");
@@ -383,7 +391,15 @@ async function boardCommit(){
   if(!_boardDirty) return;
   setDot("dot-board","saving");
   try{
-    await apiWrite(S.url,{expenses:S.expenses,memory:S.memory,shopping:S.shopping,blackboard:S.blackboard});
+    // read current server state first to avoid overwriting other sections
+    const r=await apiRead(S.url);
+    const safe={
+      expenses:Array.isArray(r.expenses)?r.expenses:S.expenses,
+      memory:(r.memory&&typeof r.memory==="object")?r.memory:S.memory,
+      shopping:Array.isArray(r.shopping)?r.shopping:S.shopping,
+      blackboard:S.blackboard,
+    };
+    await apiWrite(S.url,safe);
     _boardDirty=false;
     _lastSeenBoardHash=S.blackboard.map(n=>n.id+n.text+n.color).join("|");
     setDot("dot-board","synced");
@@ -463,7 +479,7 @@ function buildPick(){
       ),
       mk("div",{style:"margin-top:36px;padding-top:20px;border-top:1px solid var(--border-d);"},
         mk("button",{cls:"reset-btn",style:"display:block;margin:0 auto;",onClick:()=>window.location.reload()},"↻ Reload app"),
-        mk("div",{style:"font-size:11px;color:#bbb;letter-spacing:0.08em;margin-top:8px;"},"v3.9"),
+        mk("div",{style:"font-size:11px;color:#bbb;letter-spacing:0.08em;margin-top:8px;"},"v3.10"),
       ),
     )
   );
