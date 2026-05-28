@@ -868,11 +868,10 @@ function refreshShopping(){
       if(!newItem.trim()) return;
       const item={id:Date.now().toString(),text:newItem.trim(),done:false,color:"",createdAt:new Date().toISOString()};
       S.shopping=[item,...S.shopping]; _shopDirty=true;
-      setDot("dot-shopping","local"); rebuildShopList();
+      rebuildShopList();
       _shopInpEl.value=""; newItem="";
       setTimeout(()=>_shopInpEl.focus(),0);
-      if(_shopAutoTimer) clearTimeout(_shopAutoTimer);
-      _shopAutoTimer=setTimeout(()=>shopCommit(),10000);
+      shopCommit();
     }
     const addBtn=mk("button",{cls:"shop-add-btn",type:"button",onClick:addItem},"+");
     const inputRow=mk("div",{cls:"shop-input-row"},_shopInpEl,addBtn);
@@ -978,8 +977,10 @@ function refreshBoard(){
   async function addNote(){
     const text=(_boardInpEl._val||"").trim(); if(!text) return;
     const note={id:Date.now().toString(),text,color:"",person:S.user,createdAt:new Date().toISOString()};
-    await boardWrite([note,...S.blackboard]);
+    S.blackboard=[note,...S.blackboard]; _boardDirty=true;
+    rebuildBoard();
     _boardInpEl.value=""; _boardInpEl._val=""; _boardInpEl.style.height=""; _boardInpEl.focus();
+    boardCommit();
   }
   bp.innerHTML="";
   const wrap=mk("div",{cls:"body",id:"board-wrap"},
