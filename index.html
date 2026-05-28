@@ -450,9 +450,8 @@ async function freshWrite(fn){
 
 async function shopWrite(newShopping){
   S.shopping=newShopping; _shopDirty=true;
-  rebuildShopList(); setDot("dot-shopping","local");
-  if(_shopAutoTimer) clearTimeout(_shopAutoTimer);
-  _shopAutoTimer=setTimeout(()=>shopCommit(),10000);
+  rebuildShopList();
+  shopCommit();
 }
 async function shopCommit(){
   if(_shopAutoTimer){clearTimeout(_shopAutoTimer);_shopAutoTimer=null;}
@@ -469,9 +468,8 @@ async function shopCommit(){
 
 async function boardWrite(newBoard){
   S.blackboard=newBoard; _boardDirty=true;
-  rebuildBoard(); setDot("dot-board","local");
-  if(_boardAutoTimer) clearTimeout(_boardAutoTimer);
-  _boardAutoTimer=setTimeout(()=>boardCommit(),10000);
+  rebuildBoard();
+  boardCommit();
 }
 async function boardCommit(){
   if(_boardAutoTimer){clearTimeout(_boardAutoTimer);_boardAutoTimer=null;}
