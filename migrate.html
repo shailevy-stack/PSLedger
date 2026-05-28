@@ -1,0 +1,112 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1"/>
+  <title>PS Central — Migrate to Firebase</title>
+  <script src="https://www.gstatic.com/firebasejs/12.14.0/firebase-app-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/12.14.0/firebase-firestore-compat.js"></script>
+  <style>
+    body { font-family: Georgia, serif; max-width: 560px; margin: 60px auto; padding: 0 20px; color: #2c2416; background: #faf8f3; }
+    h1 { font-size: 24px; margin-bottom: 6px; }
+    p  { color: #8a7a5a; font-size: 14px; margin-bottom: 24px; }
+    label { display: block; font-size: 12px; text-transform: uppercase; letter-spacing: .08em; color: #8a7a5a; margin-bottom: 6px; }
+    input { width: 100%; font-size: 14px; font-family: Georgia, serif; border: 1px solid #ddd5c0; border-radius: 6px; background: #fffdf7; color: #2c2416; padding: 10px 12px; outline: none; margin-bottom: 16px; box-sizing: border-box; }
+    button { padding: 12px 24px; background: #2c2416; color: #f5f0e8; border: none; border-radius: 8px; font-size: 15px; font-family: Georgia, serif; cursor: pointer; }
+    button:disabled { opacity: .5; cursor: default; }
+    #log { margin-top: 24px; font-size: 13px; line-height: 1.7; white-space: pre-wrap; background: #f0ede4; border-radius: 8px; padding: 16px; min-height: 60px; }
+    .ok  { color: #2d8a4e; }
+    .err { color: #b94040; }
+  </style>
+</head>
+<body>
+<h1>❤️ Migrate to Firebase</h1>
+<p>Run this once to copy your existing data from Google Sheets into Firestore. Both sources are read-only during migration — nothing will be deleted from Sheets.</p>
+
+<label>Apps Script URL (source)</label>
+<input id="appsUrl" type="text" placeholder="https://script.google.com/macros/s/…/exec"/>
+
+<button id="btn" onclick="run()">Start migration</button>
+<div id="log">Ready.</div>
+
+<script>
+firebase.initializeApp({
+  apiKey: "AIzaSyBKOfdxSQhtdM2OL2BD1C-uQpkHNg_--jg",
+  authDomain: "psledger-a72d0.firebaseapp.com",
+  projectId: "psledger-a72d0",
+  storageBucket: "psledger-a72d0.firebasestorage.app",
+  messagingSenderId: "537720501290",
+  appId: "1:537720501290:web:9ce36249159f92b506bf53"
+});
+const db = firebase.firestore();
+
+function log(msg, cls) {
+  const d = document.getElementById("log");
+  const line = document.createElement("div");
+  if (cls) line.className = cls;
+  line.textContent = msg;
+  d.append(line);
+  d.scrollTop = d.scrollHeight;
+}
+
+async function run() {
+  const url = document.getElementById("appsUrl").value.trim();
+  if (!url) { alert("Paste your Apps Script URL first."); return; }
+  const btn = document.getElementById("btn");
+  btn.disabled = true;
+  document.getElementById("log").innerHTML = "";
+
+  try {
+    log("Reading data from Google Sheets…");
+    const r = await fetch(url + "?action=read");
+    if (!r.ok) throw new Error("HTTP " + r.status);
+    const data = await r.json();
+    if (data.error) throw new Error(data.error);
+
+    const expenses  = Array.isArray(data.expenses)  ? data.expenses  : [];
+    const memory    = data.memory && typeof data.memory === "object" ? data.memory : {};
+    const shopping  = Array.isArray(data.shopping)  ? data.shopping  : [];
+    const blackboard= Array.isArray(data.blackboard) ? data.blackboard: [];
+
+    log(`Found: ${expenses.length} expenses, ${shopping.length} shopping items, ${blackboard.length} board notes.`);
+    log("Writing to Firestore…");
+
+    await db.collection("sections").doc("expenses").set({
+      data: JSON.stringify(expenses),
+      updatedAt: firebase.firestore.FieldValue.serverTimestamp(),
+      updatedBy: "migration"
+    });
+    log("  ✓ expenses", "ok");
+
+    await db.collection("sections").doc("memory").set({
+      data: JSON.stringify(memory),
+      updatedAt: firebase.firestore.FieldValue.serverTimestamp(),
+      updatedBy: "migration"
+    });
+    log("  ✓ memory (category model)", "ok");
+
+    await db.collection("sections").doc("shopping").set({
+      data: JSON.stringify(shopping),
+      updatedAt: firebase.firestore.FieldValue.serverTimestamp(),
+      updatedBy: "migration"
+    });
+    log("  ✓ shopping list", "ok");
+
+    await db.collection("sections").doc("blackboard").set({
+      data: JSON.stringify(blackboard),
+      updatedAt: firebase.firestore.FieldValue.serverTimestamp(),
+      updatedBy: "migration"
+    });
+    log("  ✓ blackboard", "ok");
+
+    log("");
+    log("Migration complete! ✓  You can now open the main app.", "ok");
+    log("Your Sheets data is untouched and can serve as a backup.", "ok");
+  } catch(e) {
+    log("Error: " + e.message, "err");
+    btn.disabled = false;
+  }
+}
+</script>
+</body>
+</html>
