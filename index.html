@@ -10,6 +10,12 @@
   <link rel="manifest" href="manifest.json">
   <meta name="theme-color" content="#2c2416" />
   <title>PS Central</title>
+
+  <!-- Firebase -->
+  <script src="https://www.gstatic.com/firebasejs/12.14.0/firebase-app-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/12.14.0/firebase-firestore-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/12.14.0/firebase-messaging-compat.js"></script>
+
   <style>
     *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
     :root {
@@ -170,11 +176,6 @@
     .card-sub { font-size:15px; color:var(--ink-light); margin:0 0 28px; }
     .pick-buttons { display:flex; flex-direction:column; gap:12px; }
     .pick-btn { padding:14px; background:var(--ink); color:#f5f0e8; border:none; border-radius:8px; font-size:17px; font-family:inherit; cursor:pointer; }
-    .setup-step { display:flex; gap:12px; margin-bottom:16px; }
-    .step-num { width:24px; height:24px; border-radius:50%; flex-shrink:0; display:flex; align-items:center; justify-content:center; font-size:12px; font-weight:bold; margin-top:2px; }
-    .step-title { font-size:13px; font-weight:bold; color:var(--ink); margin-bottom:3px; }
-    .step-body { font-size:12px; color:var(--ink-light); line-height:1.6; }
-    .step-body a { color:var(--gold); } .step-body code,.step-body kbd { font-size:11px; background:#f0ede4; padding:1px 4px; border-radius:3px; font-family:inherit; }
     .error-msg { font-size:12px; color:var(--red); margin-top:8px; line-height:1.5; }
     .reset-btn { margin-top:20px; background:none; border:1px solid var(--border); color:var(--ink-light); border-radius:6px; padding:6px 14px; cursor:pointer; font-family:inherit; font-size:12px; }
     .empty { text-align:center; color:#aaa; margin-top:40px; font-style:italic; }
@@ -184,26 +185,71 @@
 <body>
 <div id="root"></div>
 <script>
+// ── Firebase config ───────────────────────────────────────────────────────────
+const FIREBASE_CONFIG = {
+  apiKey: "AIzaSyBKOfdxSQhtdM2OL2BD1C-uQpkHNg_--jg",
+  authDomain: "psledger-a72d0.firebaseapp.com",
+  projectId: "psledger-a72d0",
+  storageBucket: "psledger-a72d0.firebasestorage.app",
+  messagingSenderId: "537720501290",
+  appId: "1:537720501290:web:9ce36249159f92b506bf53"
+};
+const VAPID_KEY = "BDg08BlLfjW_pjvtdWZNDpKAbkIw1PGg-UE184T9ne8Kfv56-bpNkYPhMGfkgp-TnmwNKhi-hQiMTXOhY3O1tuo";
+
 const PEOPLE = ["Shai","Polina"];
 const CATS = ["🛒 Groceries","🍽️ Eating out","🏠 Home","🚌 Transport","💊 Health","👕 Clothing","🎬 Entertainment","✈️ Travel","📦 Other"];
 const ls = { get:k=>localStorage.getItem(k)||"", set:(k,v)=>localStorage.setItem(k,v), del:k=>localStorage.removeItem(k) };
 
-// ── API ───────────────────────────────────────────────────────────────────────
-async function apiRead(url) {
-  const r = await fetch(url+"?action=read");
-  if (!r.ok) throw new Error("HTTP "+r.status);
-  const j = await r.json(); if (j.error) throw new Error(j.error); return j;
+// ── Firebase init ─────────────────────────────────────────────────────────────
+let db, messaging;
+try {
+  firebase.initializeApp(FIREBASE_CONFIG);
+  db = firebase.firestore();
+  messaging = firebase.messaging();
+} catch(e) {
+  // already initialized (hot reload)
+  db = firebase.firestore();
+  try { messaging = firebase.messaging(); } catch(_) {}
 }
-async function apiWrite(url, data) {
-  const r = await fetch(url,{method:"POST",headers:{"Content-Type":"text/plain"},body:JSON.stringify({action:"write",data})});
-  if (!r.ok) throw new Error("HTTP "+r.status);
-  const j = await r.json(); if (j.error) throw new Error(j.error);
+
+// ── Firestore helpers ─────────────────────────────────────────────────────────
+async function fsWrite(section, data) {
+  await db.collection("sections").doc(section).set({
+    data: JSON.stringify(data),
+    updatedAt: firebase.firestore.FieldValue.serverTimestamp(),
+    updatedBy: S.user || "unknown"
+  });
 }
-// Targeted single-section write — cannot affect other sections
-async function apiWriteSection(url, section, data) {
-  const r = await fetch(url,{method:"POST",headers:{"Content-Type":"text/plain"},body:JSON.stringify({action:"write",section,data})});
-  if (!r.ok) throw new Error("HTTP "+r.status);
-  const j = await r.json(); if (j.error) throw new Error(j.error);
+
+// ── Legacy Apps Script URL (optional — kept for Sheets audit log) ─────────────
+function getNotifyUrl() { return ls.get("lb_url"); }
+
+async function sheetsLog(expenses) {
+  const url = getNotifyUrl();
+  if (!url) return;
+  fetch(url, {
+    method: "POST",
+    headers: { "Content-Type": "text/plain" },
+    body: JSON.stringify({ action: "log", expenses })
+  }).catch(() => {});
+}
+
+// ── FCM notification to partner ───────────────────────────────────────────────
+async function notifyPartner(title, body) {
+  try {
+    const partner = PEOPLE.find(p => p !== S.user);
+    if (!partner) return;
+    const snap = await db.collection("users").doc(partner).get();
+    if (!snap.exists || !snap.data().fcmToken) return;
+    const token = snap.data().fcmToken;
+    const url = getNotifyUrl();
+    if (!url) return;
+    fetch(url, {
+      method: "POST",
+      headers: { "Content-Type": "text/plain" },
+      body: JSON.stringify({ action: "notify", token, title, body })
+    }).catch(() => {});
+  } catch(e) {}
 }
 
 // ── Learning ──────────────────────────────────────────────────────────────────
@@ -243,114 +289,168 @@ function mk(tag,attrs,...kids){
   return e;
 }
 
+function showBrowserNotification(title, body) {
+  if (Notification.permission === "granted") {
+    new Notification(title, { body, icon: "apple-touch-icon.png" });
+  }
+}
+
 // ── State ─────────────────────────────────────────────────────────────────────
 let S={
-  url:ls.get("lb_url"), user:ls.get("lb_user"),
-  section:ls.get("lb_section")||"ledger",
+  user: ls.get("lb_user"),
+  section: ls.get("lb_section")||"ledger",
   expenses:[], memory:{}, shopping:[], blackboard:[], insightsRange:"month",
-  loading:true, loadErr:"", setupStep:1, setupUrl:"", setupErr:"", setupBusy:false,
+  loading:true, loadErr:"",
 };
-let writeLock=false, inferTimer=null, pollTimer=null;
-let updateLogBtn = null; // set by buildApp, called after any write
+let writeLock=false;
+let updateLogBtn=null;
+let _listeners=[];
 
-// ── Data ──────────────────────────────────────────────────────────────────────
-async function load(quiet=false){
-  if(!S.url) return;
-  if(!quiet){S.loading=true;S.loadErr="";refreshHistory();}
-  try{
-    const r=await apiRead(S.url);
-    S.expenses=Array.isArray(r.expenses)?r.expenses:[];
-    S.memory=(r.memory&&typeof r.memory==="object")?r.memory:{};
-    if(!_shopDirty) S.shopping=Array.isArray(r.shopping)?r.shopping:[];
-    if(!_boardDirty) S.blackboard=Array.isArray(r.blackboard)?r.blackboard:[];
-    S.loading=false;S.loadErr="";
-  }catch(e){S.loading=false;S.loadErr=e.message;}
-  refreshHistory(); refreshBalance(); refreshInsights();
-  // check if ledger has new data since last seen
-  if(S.expenses.length > _lastSeenExpenseCount){
-    if(_lastSeenExpenseCount>0){
-      setDot("dot-ledger","new");
-      setDot("dot-history","new");
-    } else {
-      // first load — set baseline, no red dot
-      _lastSeenExpenseCount=S.expenses.length;
-      setDot("dot-ledger","synced");
-      setDot("dot-history","synced");
+// ── Firestore real-time listeners ─────────────────────────────────────────────
+let _lastSeenExpenseCount=0;
+let _lastSeenShoppingHash=null;
+let _lastSeenBoardHash=null;
+let _shopDirty=false;
+let _boardDirty=false;
+let _shopAutoTimer=null;
+let _boardAutoTimer=null;
+
+function startListeners() {
+  _listeners.forEach(u => u());
+  _listeners = [];
+
+  const expUnsub = db.collection("sections").doc("expenses").onSnapshot(snap => {
+    if (!snap.exists) { S.loading=false; S.loadErr=""; refreshHistory(); return; }
+    const d = snap.data();
+    let parsed;
+    try { parsed = JSON.parse(d.data); } catch(e) { parsed = []; }
+    S.expenses = Array.isArray(parsed) ? parsed : [];
+    const fromMe = d.updatedBy === S.user;
+
+    if (!fromMe && _lastSeenExpenseCount > 0 && S.expenses.length > _lastSeenExpenseCount) {
+      setDot("dot-ledger","new"); setDot("dot-history","new");
+      showBrowserNotification("PS Central", (d.updatedBy||"Someone")+" added an expense");
+    } else if (_lastSeenExpenseCount === 0) {
+      _lastSeenExpenseCount = S.expenses.length;
+      setDot("dot-ledger","synced"); setDot("dot-history","synced");
+    } else if (fromMe) {
+      _lastSeenExpenseCount = S.expenses.length;
+      setDot("dot-ledger","synced"); setDot("dot-history","synced");
     }
-    // don't update _lastSeenExpenseCount yet — user hasn't seen it
-  } else {
-    setDot("dot-ledger","synced");
-    setDot("dot-history","synced");
-  }
-  // shopping
-  if(!_shopDirty){
-    const newHash=S.shopping.map(i=>i.id+i.done+i.color).join("|");
+
+    S.loading=false; S.loadErr="";
+    refreshHistory(); refreshBalance(); refreshInsights();
+    if (updateLogBtn) updateLogBtn();
+  }, err => { S.loading=false; S.loadErr=err.message; refreshHistory(); });
+
+  const memUnsub = db.collection("sections").doc("memory").onSnapshot(snap => {
+    if (!snap.exists) return;
+    try { S.memory = JSON.parse(snap.data().data) || {}; } catch(e) {}
+  });
+
+  const shopUnsub = db.collection("sections").doc("shopping").onSnapshot(snap => {
+    if (!snap.exists) { rebuildShopList(); return; }
+    const d = snap.data();
+    const fromMe = d.updatedBy === S.user;
+    if (_shopDirty && !fromMe) return;
+    let parsed;
+    try { parsed = JSON.parse(d.data); } catch(e) { parsed = []; }
+    S.shopping = Array.isArray(parsed) ? parsed : [];
+    const newHash = S.shopping.map(i=>i.id+i.done+i.color).join("|");
+    if (!fromMe && _lastSeenShoppingHash !== null && newHash !== _lastSeenShoppingHash) {
+      setDot("dot-shopping","new");
+      showBrowserNotification("PS Central", (d.updatedBy||"Someone")+" updated the shopping list");
+    } else {
+      setDot("dot-shopping","synced");
+    }
+    if (fromMe || _lastSeenShoppingHash === null) _lastSeenShoppingHash = newHash;
+    rebuildShopList();
+
     const today=todayStr();
     const lastClear=ls.get("shop_clear_date");
     if(lastClear && lastClear!==today){
       const cleared=S.shopping.filter(i=>!i.done);
-      if(cleared.length!==S.shopping.length){S.shopping=cleared;apiWriteSection(S.url,"shopping",cleared);}
+      if(cleared.length!==S.shopping.length){ S.shopping=cleared; fsWrite("shopping",cleared); }
       ls.set("shop_clear_date",today);
     } else if(!lastClear) ls.set("shop_clear_date",today);
+  });
 
-    if(_lastSeenShoppingHash===null){
-      // first load — set baseline, show list
-      _lastSeenShoppingHash=newHash;
-      refreshShopping(); // builds panel if not yet built
-      setDot("dot-shopping","synced");
-    } else if(newHash!==_lastSeenShoppingHash){
-      // server has changes — show red, update list silently
-      S.shopping=Array.isArray(S.shopping)?S.shopping:[];
-      rebuildShopList();
-      setDot("dot-shopping","new");
-    } else {
-      rebuildShopList();
-      setDot("dot-shopping","synced");
-    }
-  }
-  // blackboard
-  if(!_boardDirty){
-    const newHash=S.blackboard.map(n=>n.id+n.text+n.color).join("|");
-    if(_lastSeenBoardHash===null){
-      _lastSeenBoardHash=newHash;
-      rebuildBoard();
-      setDot("dot-board","synced");
-    } else if(newHash!==_lastSeenBoardHash){
-      rebuildBoard();
+  const boardUnsub = db.collection("sections").doc("blackboard").onSnapshot(snap => {
+    if (!snap.exists) { rebuildBoard(); return; }
+    const d = snap.data();
+    const fromMe = d.updatedBy === S.user;
+    if (_boardDirty && !fromMe) return;
+    let parsed;
+    try { parsed = JSON.parse(d.data); } catch(e) { parsed = []; }
+    S.blackboard = Array.isArray(parsed) ? parsed : [];
+    const newHash = S.blackboard.map(n=>n.id+n.text+n.color).join("|");
+    if (!fromMe && _lastSeenBoardHash !== null && newHash !== _lastSeenBoardHash) {
       setDot("dot-board","new");
+      showBrowserNotification("PS Central", (d.updatedBy||"Someone")+" updated the board");
     } else {
-      rebuildBoard();
       setDot("dot-board","synced");
     }
-  }
-  if(updateLogBtn) updateLogBtn();
+    if (fromMe || _lastSeenBoardHash === null) _lastSeenBoardHash = newHash;
+    rebuildBoard();
+  });
+
+  _listeners = [expUnsub, memUnsub, shopUnsub, boardUnsub];
 }
+
+function stopListeners() {
+  _listeners.forEach(u => u());
+  _listeners = [];
+}
+
+// ── FCM setup ─────────────────────────────────────────────────────────────────
+async function setupFCM() {
+  if (!messaging || !S.user) return;
+  try {
+    if (!("serviceWorker" in navigator)) return;
+    const reg = await navigator.serviceWorker.register("firebase-messaging-sw.js");
+    const permission = await Notification.requestPermission();
+    if (permission !== "granted") return;
+    const token = await messaging.getToken({ vapidKey: VAPID_KEY, serviceWorkerRegistration: reg });
+    if (token) {
+      await db.collection("users").doc(S.user).set({
+        fcmToken: token,
+        updatedAt: firebase.firestore.FieldValue.serverTimestamp()
+      }, { merge: true });
+    }
+    messaging.onMessage(payload => {
+      const t = (payload.notification && payload.notification.title) || "PS Central";
+      const b = (payload.notification && payload.notification.body) || "New update";
+      showBrowserNotification(t, b);
+    });
+  } catch(e) {
+    console.warn("FCM setup:", e.message);
+  }
+}
+
+// ── Dot system ────────────────────────────────────────────────────────────────
+function setDot(id, state){ const d=el(id); if(d) d.className="sec-dot "+state; }
+
+// ── Write helpers ─────────────────────────────────────────────────────────────
 async function freshWrite(fn){
   if(writeLock)return; writeLock=true;
   try{
     const next=fn(S.expenses, S.memory, S.shopping);
     S.expenses=next.expenses; S.memory=next.memory; S.shopping=next.shopping||S.shopping;
-    _lastSeenExpenseCount=S.expenses.length;
     refreshHistory(); refreshBalance(); refreshInsights(); rebuildShopList();
     if(updateLogBtn) updateLogBtn();
     setDot("dot-ledger","saving");
-    await apiWriteSection(S.url,"expenses",S.expenses);
-    await apiWriteSection(S.url,"memory",S.memory);
+    await fsWrite("expenses", S.expenses);
+    await fsWrite("memory", S.memory);
     setDot("dot-ledger","synced");
-  }catch(e){alert("Save failed: "+e.message); setDot("dot-ledger","local");}
+    sheetsLog(S.expenses);
+    notifyPartner("PS Central", S.user+" added an expense");
+  }catch(e){ alert("Save failed: "+e.message); setDot("dot-ledger","local"); }
   writeLock=false;
 }
-// ── Unified dot system ────────────────────────────────────────────────────────
-function setDot(id, state){ const d=el(id); if(d) d.className="sec-dot "+state; }
 
-// ── Shopping state ────────────────────────────────────────────────────────────
-let _shopDirty=false;
-let _shopAutoTimer=null;
 async function shopWrite(newShopping){
-  S.shopping=newShopping;
-  _shopDirty=true;
-  rebuildShopList();
-  setDot("dot-shopping","local");
+  S.shopping=newShopping; _shopDirty=true;
+  rebuildShopList(); setDot("dot-shopping","local");
   if(_shopAutoTimer) clearTimeout(_shopAutoTimer);
   _shopAutoTimer=setTimeout(()=>shopCommit(),10000);
 }
@@ -359,29 +459,17 @@ async function shopCommit(){
   if(!_shopDirty) return;
   setDot("dot-shopping","saving");
   try{
-    await apiWriteSection(S.url,"shopping",S.shopping);
+    await fsWrite("shopping", S.shopping);
     _shopDirty=false;
     _lastSeenShoppingHash=S.shopping.map(i=>i.id+i.done+i.color).join("|");
     setDot("dot-shopping","synced");
-  }catch(e){
-    setDot("dot-shopping","local");
-    alert("Save failed: "+e.message);
-  }
+    notifyPartner("PS Central", S.user+" updated the shopping list");
+  }catch(e){ setDot("dot-shopping","local"); alert("Save failed: "+e.message); }
 }
 
-// ── Ledger state ──────────────────────────────────────────────────────────────
-let _lastSeenExpenseCount=0;
-let _lastSeenShoppingHash=null;
-let _lastSeenBoardHash=null;
-
-// ── Blackboard state ──────────────────────────────────────────────────────────
-let _boardDirty=false;
-let _boardAutoTimer=null;
 async function boardWrite(newBoard){
-  S.blackboard=newBoard;
-  _boardDirty=true;
-  rebuildBoard();
-  setDot("dot-board","local");
+  S.blackboard=newBoard; _boardDirty=true;
+  rebuildBoard(); setDot("dot-board","local");
   if(_boardAutoTimer) clearTimeout(_boardAutoTimer);
   _boardAutoTimer=setTimeout(()=>boardCommit(),10000);
 }
@@ -390,72 +478,21 @@ async function boardCommit(){
   if(!_boardDirty) return;
   setDot("dot-board","saving");
   try{
-    await apiWriteSection(S.url,"blackboard",S.blackboard);
+    await fsWrite("blackboard", S.blackboard);
     _boardDirty=false;
     _lastSeenBoardHash=S.blackboard.map(n=>n.id+n.text+n.color).join("|");
     setDot("dot-board","synced");
-  }catch(e){
-    setDot("dot-board","local");
-    alert("Save failed: "+e.message);
-  }
+    notifyPartner("PS Central", S.user+" updated the board");
+  }catch(e){ setDot("dot-board","local"); alert("Save failed: "+e.message); }
 }
-function startPoll(){if(pollTimer)clearInterval(pollTimer);pollTimer=setInterval(()=>load(true),20000);}
 
-// ── Root renderer — decides which top-level screen to show ───────────────────
+// ── Root renderer ─────────────────────────────────────────────────────────────
 function renderRoot(){
   const root=el("root"); root.innerHTML="";
-  if(!S.url){root.append(buildSetup());return;}
   if(!S.user){root.append(buildPick());return;}
   root.append(buildApp());
-  refreshShopping(); // build panel structure eagerly so rebuildShopList works on any load
-  refreshBoard();    // same for blackboard
-}
-
-// ── Setup ─────────────────────────────────────────────────────────────────────
-function buildSetup(){
-  const steps=[
-    {title:"Create the spreadsheet",body:`Go to <a href="https://sheets.new" target="_blank">sheets.new</a>. Name it anything.`},
-    {title:"Open Apps Script",body:`In the sheet: <code>Extensions → Apps Script</code>. Editor opens in new tab.`},
-    {title:"Paste the server code",body:`Delete existing code, paste the <code>apps-script.js</code> content, save with <code>Ctrl+S</code>.`},
-    {title:"Deploy",body:`<code>Deploy → New deployment</code>. Type: Web app. Execute as: <b>Me</b>. Access: <b>Anyone</b>. Deploy, authorise, copy URL.`},
-  ];
-  const wrap=mk("div",{cls:"screen"},
-    mk("div",{cls:"card"},
-      mk("div",{cls:"card-center"},
-        mk("div",{cls:"big-emoji"},"❤️"),
-        mk("h1",{cls:"card-title"},"PS Central"),
-        mk("p",{style:"font-size:13px;color:#8a7a5a;margin-bottom:20px"},"One-time setup — ~5 minutes"),
-      ),
-      ...steps.map((s,i)=>{
-        const n=i+1,done=S.setupStep>n,active=S.setupStep===n;
-        return mk("div",{cls:"setup-step",style:`opacity:${S.setupStep<n?.4:1}`},
-          mk("div",{cls:"step-num",style:`background:${done?"#2d8a4e":active?"#2c2416":"#ddd5c0"};color:${active||done?"#f5f0e8":"#8a7a5a"}`},done?"✓":String(n)),
-          mk("div",{},mk("div",{cls:"step-title"},s.title),mk("div",{cls:"step-body",html:s.body}))
-        );
-      }),
-      S.setupStep<4
-        ? mk("button",{cls:"submit-btn",style:"width:100%;margin-top:8px",onClick:()=>{S.setupStep++;renderRoot();}},"Done, next step →")
-        : mk("div",{style:"margin-top:8px"},
-            mk("div",{cls:"label",style:"margin-bottom:6px"},"Web app URL"),
-            mk("input",{cls:"text-input",type:"text",placeholder:"https://script.google.com/macros/s/...",
-              style:"font-size:13px",value:S.setupUrl,
-              onInput:e=>S.setupUrl=e.target.value,
-            }),
-            S.setupErr?mk("div",{cls:"error-msg"},S.setupErr):null,
-            mk("button",{cls:"submit-btn",style:`width:100%;margin-top:12px;opacity:${!S.setupUrl||S.setupBusy?.5:1}`,
-              onClick:doConnect},"Connect & start"),
-          ),
-    )
-  );
-  return wrap;
-}
-async function doConnect(){
-  const url=S.setupUrl.trim(); if(!url)return;
-  S.setupBusy=true;S.setupErr="";renderRoot();
-  try{
-    await apiRead(url); ls.set("lb_url",url); S.url=url; S.setupBusy=false;
-    renderRoot(); load(); startPoll();
-  }catch(e){S.setupBusy=false;S.setupErr="Could not connect: "+e.message+". Make sure deployed as 'Anyone'.";renderRoot();}
+  refreshShopping();
+  refreshBoard();
 }
 
 // ── Pick ──────────────────────────────────────────────────────────────────────
@@ -466,31 +503,33 @@ function buildPick(){
       mk("h1",{cls:"card-title"},"PS Central"),
       mk("div",{style:"height:32px;"}),
       mk("div",{cls:"pick-buttons"},
-        ...PEOPLE.map(p=>mk("button",{cls:"pick-btn",onClick:()=>{ls.set("lb_user",p);S.user=p;renderRoot();load();startPoll();}},p))
+        ...PEOPLE.map(p=>mk("button",{cls:"pick-btn",onClick:()=>{
+          ls.set("lb_user",p); S.user=p;
+          renderRoot();
+          startListeners();
+          setupFCM();
+        }},p))
       ),
       mk("div",{style:"margin-top:36px;padding-top:20px;border-top:1px solid var(--border-d);"},
         mk("button",{cls:"reset-btn",style:"display:block;margin:0 auto;",onClick:()=>window.location.reload()},"↻ Reload app"),
-        mk("div",{style:"font-size:11px;color:#bbb;letter-spacing:0.08em;margin-top:8px;"},"v4.0"),
+        mk("div",{style:"font-size:11px;color:#bbb;letter-spacing:0.08em;margin-top:8px;"},"v5.0"),
       ),
     )
   );
 }
 
-// ── App shell (built once per session, never destroyed) ───────────────────────
+// ── App shell ─────────────────────────────────────────────────────────────────
 let appShell=null;
-let logForm=null;  // the log form DOM node, kept alive
+let logForm=null;
 
 function buildApp(){
   if(appShell) return appShell;
 
-  // ── Log form (built once, never rebuilt) ──────────────────────────────────
   const amtInput=mk("input",{cls:"amount-input",type:"number",placeholder:"0.00",inputmode:"decimal",
     onInput:e=>{logAmt=e.target.value;updateBtn();}
   });
   const descInput=mk("input",{cls:"text-input",type:"text",placeholder:"e.g. weekly shop, dinner…",
-    onInput:e=>{
-      logDesc=e.target.value; catManual=false; updateBtn();
-    },
+    onInput:e=>{logDesc=e.target.value;catManual=false;updateBtn();},
     onBlur:e=>{
       if(catManual||e.target.value.trim().length<3) return;
       const c=inferCat(S.memory,e.target.value);
@@ -504,28 +543,20 @@ function buildApp(){
     onChange:e=>{logCat=e.target.value;catManual=true;catSelect.classList.remove("select-hi");autoHint.style.display="none";}
   },...CATS.map(c=>mk("option",{value:c},c)));
 
-  const todayBtn=mk("button",{cls:"date-tab active",
-    type:"button",
+  const todayBtn=mk("button",{cls:"date-tab active",type:"button",
     onClick:()=>{
-      logDateMode="today";
-      todayBtn.className="date-tab active";
-      manualBtn.className="date-tab";
-      logManualDate=todayStr();
-      dateDisplay.textContent="Today";
-      updateBtn();
+      logDateMode="today"; todayBtn.className="date-tab active"; manualBtn.className="date-tab";
+      logManualDate=todayStr(); dateDisplay.textContent="Today"; updateBtn();
     }
-  }, "Today");
+  },"Today");
 
   const datePick=mk("input",{type:"date",value:todayStr(),
     style:"position:absolute;inset:0;width:100%;height:100%;opacity:0;cursor:pointer;z-index:1;",
     onChange:e=>{
       if(!e.target.value) return;
-      logManualDate=e.target.value;
-      logDateMode="manual";
-      todayBtn.className="date-tab";
-      manualBtn.className="date-tab active";
-      dateDisplay.textContent=fmtDate(e.target.value);
-      updateBtn();
+      logManualDate=e.target.value; logDateMode="manual";
+      todayBtn.className="date-tab"; manualBtn.className="date-tab active";
+      dateDisplay.textContent=fmtDate(e.target.value); updateBtn();
     }
   });
   const manualBtn=mk("div",{cls:"date-tab",style:"position:relative;cursor:pointer;text-align:center;user-select:none;"},"Pick date");
@@ -537,7 +568,7 @@ function buildApp(){
   const saveBtn=mk("button",{cls:"submit-btn btn-disabled",onClick:async()=>{
     const amt=parseFloat(logAmt);
     if(!amt||amt<=0||!logDesc.trim())return;
-    saveBtn.disabled=true;saveBtn.textContent="Saving…";
+    saveBtn.disabled=true; saveBtn.textContent="Saving…";
     const entry={id:Date.now().toString(),person:S.user,amount:amt,description:logDesc.trim(),
       category:logCat,date:logDateMode==="today"?todayStr():logManualDate,createdAt:new Date().toISOString()};
     await freshWrite((exps,mem,shop)=>({
@@ -545,13 +576,12 @@ function buildApp(){
       memory:learn(mem,logDesc,logCat),
       shopping:shop,
     }));
-    // reset
     logAmt="";logDesc="";logCat=CATS[0];catManual=false;logDateMode="today";
     amtInput.value="";descInput.value="";
     catSelect.value=CATS[0];catSelect.classList.remove("select-hi");autoHint.style.display="none";
     todayBtn.className="date-tab active"; manualBtn.className="date-tab";
     dateDisplay.textContent="Today"; logDateMode="today";
-    saveBtn.className="submit-btn saved";saveBtn.textContent="✓ Saved";
+    saveBtn.className="submit-btn saved"; saveBtn.textContent="✓ Saved";
     setTimeout(()=>{saveBtn.className="submit-btn btn-disabled";saveBtn.textContent=`Log as ${S.user}`;updateBtn();},2000);
   }});
   saveBtn.textContent=`Log as ${S.user}`;
@@ -561,7 +591,7 @@ function buildApp(){
     saveBtn.disabled=false;
     saveBtn.className="submit-btn"+(ok?"":" btn-disabled");
   }
-  updateLogBtn = updateBtn;
+  updateLogBtn=updateBtn;
 
   logForm=mk("div",{cls:"form"},
     mk("div",{cls:"form-row"},mk("label",{cls:"label"},"Amount"),mk("div",{cls:"amount-wrap"},mk("span",{cls:"amount-prefix"},"€"),amtInput)),
@@ -571,23 +601,21 @@ function buildApp(){
     saveBtn,
   );
 
-  // ── History panel ─────────────────────────────────────────────────────────
   const histBody=mk("div",{id:"hist-body"});
   const histPanel=mk("div",{cls:"tab-panel",id:"tab-history"},histBody);
-
-  // ── Balance panel ─────────────────────────────────────────────────────────
   const balPanel=mk("div",{cls:"tab-panel",id:"tab-balance"});
-
-  // ── Insights panel ────────────────────────────────────────────────────────
   const insPanel=mk("div",{cls:"tab-panel",id:"tab-insights"});
 
-  // ── Shell ─────────────────────────────────────────────────────────────────
   const header=mk("div",{cls:"header"},
     mk("div",{cls:"header-left"},mk("span",{style:"font-size:18px"},"❤️"),mk("span",{cls:"header-title"},"PS Central")),
-    mk("button",{cls:"user-badge",onClick:()=>{ls.del("lb_user");S.user="";appShell=null;logForm=null;_shopInpEl=null;_boardInpEl=null;_shopDirty=false;_boardDirty=false;_lastSeenShoppingHash=null;_lastSeenBoardHash=null;_lastSeenExpenseCount=0;if(pollTimer)clearInterval(pollTimer);renderRoot();}},S.user+" ⚙️"),
+    mk("button",{cls:"user-badge",onClick:()=>{
+      ls.del("lb_user"); S.user=""; appShell=null; logForm=null;
+      _shopInpEl=null; _boardInpEl=null; _shopDirty=false; _boardDirty=false;
+      _lastSeenShoppingHash=null; _lastSeenBoardHash=null; _lastSeenExpenseCount=0;
+      stopListeners(); renderRoot();
+    }},S.user+" ⚙️"),
   );
 
-  // ── Section bar ───────────────────────────────────────────────────────────
   const sections=[["ledger","💰","Ledger"],["shopping","🛒","Shopping"],["blackboard","📋","Blackboard"]];
   let activeSection=S.section;
   const sectionBtns={};
@@ -608,31 +636,18 @@ function buildApp(){
       refreshShopping();
       const sd=el("dot-shopping");
       if(sd&&sd.classList.contains("new")){
-        // pull fresh data
-        setDot("dot-shopping","pulling");
-        load(true).then(()=>{
-          _lastSeenShoppingHash=S.shopping.map(i=>i.id+i.done+i.color).join("|");
-          refreshShopping();
-          setDot("dot-shopping","synced");
-        });
-      } else if(_shopDirty){
-        shopCommit();
-      }
+        setDot("dot-shopping","synced");
+        _lastSeenShoppingHash=S.shopping.map(i=>i.id+i.done+i.color).join("|");
+      } else if(_shopDirty){ shopCommit(); }
     } else {
       nav.style.display="none"; body.style.display="none";
       shopPanel.classList.remove("active"); boardPanel.classList.add("active");
       refreshBoard();
       const bd=el("dot-board");
       if(bd&&bd.classList.contains("new")){
-        setDot("dot-board","pulling");
-        load(true).then(()=>{
-          _lastSeenBoardHash=S.blackboard.map(n=>n.id+n.text+n.color).join("|");
-          rebuildBoard();
-          setDot("dot-board","synced");
-        });
-      } else if(_boardDirty){
-        boardCommit();
-      }
+        setDot("dot-board","synced");
+        _lastSeenBoardHash=S.blackboard.map(n=>n.id+n.text+n.color).join("|");
+      } else if(_boardDirty){ boardCommit(); }
     }
   }
 
@@ -649,10 +664,7 @@ function buildApp(){
   const tabs=[["log","＋ Log"],["history","History"],["balance","Balance"],["insights","Insights"]];
   let activeTab="log";
   const navBtns={};
-
-  // History dot — lives in the History sub-tab button
   const histDot=mk("span",{cls:"sec-dot synced",id:"dot-history"});
-
   const panels={log:mk("div",{cls:"tab-panel active",id:"tab-log"},logForm),history:histPanel,balance:balPanel,insights:insPanel};
 
   function switchTab(t){
@@ -660,16 +672,10 @@ function buildApp(){
     activeTab=t;
     navBtns[t].classList.add("active"); panels[t].classList.add("active");
     if(t==="history"){
-      // if red, pull fresh data
       const d=el("dot-history");
       if(d&&d.classList.contains("new")){
-        setDot("dot-history","pulling");
-        setDot("dot-ledger","pulling");
-        load(true).then(()=>{
-          _lastSeenExpenseCount=S.expenses.length;
-          setDot("dot-history","synced");
-          setDot("dot-ledger","synced");
-        });
+        _lastSeenExpenseCount=S.expenses.length;
+        setDot("dot-history","synced"); setDot("dot-ledger","synced");
       }
     }
   }
@@ -683,7 +689,6 @@ function buildApp(){
 
   const body=mk("div",{cls:"body"},...Object.values(panels));
 
-  // hide nav/body if not on ledger section at start
   if(activeSection!=="ledger"){nav.style.display="none";body.style.display="none";}
   if(activeSection==="shopping") shopPanel.classList.add("active");
   if(activeSection==="blackboard") boardPanel.classList.add("active");
@@ -692,10 +697,9 @@ function buildApp(){
   return appShell;
 }
 
-// ── Targeted refresh functions (don't touch the log form) ─────────────────────
+// ── History ───────────────────────────────────────────────────────────────────
 function refreshHistory(){
   const hb=el("hist-body"); if(!hb)return;
-  // Don't refresh if an edit form is currently open — would destroy mid-edit
   if(hb.querySelector(".expense-row.editing")) return;
   hb.innerHTML="";
   if(S.loading){hb.append(mk("p",{cls:"empty"},"Loading…"));return;}
@@ -707,13 +711,11 @@ function refreshHistory(){
     items.sort((a,b)=>b.createdAt.localeCompare(a.createdAt));
     hb.append(mk("div",{cls:"date-group"},fmtDate(date)));
     items.forEach(e=>{
-      const isMine = e.person===S.user;
-      const row = mk("div",{cls:"expense-row "+(isMine?"mine":"theirs"),style:"user-select:none;"});
+      const isMine=e.person===S.user;
+      const row=mk("div",{cls:"expense-row "+(isMine?"mine":"theirs"),style:"user-select:none;"});
 
       function buildNormalView(){
-        row.innerHTML="";
-        row.className="expense-row "+(isMine?"mine":"theirs");
-        row.style.userSelect="none";
+        row.innerHTML=""; row.className="expense-row "+(isMine?"mine":"theirs"); row.style.userSelect="none";
         row.append(
           mk("div",{cls:"expense-left"},
             mk("span",{cls:"expense-cat"},e.category.split(" ")[0]),
@@ -735,21 +737,14 @@ function refreshHistory(){
       }
 
       function buildEditView(){
-        row.innerHTML="";
-        row.className="expense-row editing";
-
-        let editAmt=e.amount.toString();
-        let editDesc=e.description;
-        let editCat=e.category;
-        let editDateMode=e.date===todayStr()?"today":"manual";
-        let editDate=e.date;
-
+        row.innerHTML=""; row.className="expense-row editing";
+        let editAmt=e.amount.toString(),editDesc=e.description,editCat=e.category;
+        let editDateMode=e.date===todayStr()?"today":"manual",editDate=e.date;
         const amtIn=mk("input",{cls:"edit-amt",type:"number",value:editAmt,inputmode:"decimal",onInput:ev=>editAmt=ev.target.value});
         const descIn=mk("input",{cls:"edit-desc",type:"text",value:editDesc,onInput:ev=>editDesc=ev.target.value});
         const catSel=mk("select",{cls:"edit-cat",onChange:ev=>editCat=ev.target.value},
           ...CATS.map(c=>Object.assign(mk("option",{value:c},c),{selected:c===editCat}))
         );
-
         const dateDisplay=mk("div",{cls:"edit-date-display"},fmtDate(editDate));
         const editDatePick=mk("input",{type:"date",value:editDate,
           style:"position:absolute;inset:0;width:100%;height:100%;opacity:0;cursor:pointer;",
@@ -762,31 +757,24 @@ function refreshHistory(){
         }},"Today");
         const manualTabE=mk("div",{cls:"edit-date-tab"+(editDateMode==="manual"?" active":""),style:"position:relative;cursor:pointer;"},"Pick date");
         manualTabE.appendChild(editDatePick);
-
         const saveBtn=mk("button",{cls:"edit-save",onClick:async()=>{
           const amt=parseFloat(editAmt);
           if(!amt||amt<=0||!editDesc.trim()) return;
-          // collapse to normal view immediately in greyscale
           e.amount=amt; e.description=editDesc.trim(); e.category=editCat; e.date=editDate;
           buildNormalView();
           row.className="expense-row "+(isMine?"mine":"theirs")+" saving";
           await freshWrite((exps,mem,sh)=>({
             expenses:exps.map(x=>x.id===e.id?{...x,amount:amt,description:editDesc.trim(),category:editCat,date:editDate}:x)
                         .sort((a,b)=>b.date.localeCompare(a.date)),
-            memory:mem,
-            shopping:sh,
+            memory:mem, shopping:sh,
           }));
           row.className="expense-row "+(isMine?"mine":"theirs")+" save-done";
           setTimeout(()=>{row.className="expense-row "+(isMine?"mine":"theirs");},600);
         }},"✓ Save");
-
         const cancelBtn=mk("button",{cls:"edit-cancel",onClick:()=>buildNormalView()},"Cancel");
-
         row.append(mk("div",{cls:"edit-form"},
-          mk("div",{cls:"edit-row-inputs"},amtIn,descIn),
-          catSel,
-          mk("div",{cls:"edit-date-row"},todayTabE,manualTabE),
-          dateDisplay,
+          mk("div",{cls:"edit-row-inputs"},amtIn,descIn),catSel,
+          mk("div",{cls:"edit-date-row"},todayTabE,manualTabE),dateDisplay,
           mk("div",{cls:"edit-actions"},saveBtn,cancelBtn),
         ));
       }
@@ -797,6 +785,7 @@ function refreshHistory(){
   });
 }
 
+// ── Balance ───────────────────────────────────────────────────────────────────
 function refreshBalance(){
   const bp=el("tab-balance"); if(!bp)return;
   bp.innerHTML="";
@@ -825,6 +814,7 @@ function refreshBalance(){
     bp.append(mk("div",{cls:"verdict"},bal[S.user]>0?`${partner} owes you €${bal[S.user].toFixed(2)}`:`You owe ${partner} €${Math.abs(bal[S.user]).toFixed(2)}`));
 }
 
+// ── Insights ──────────────────────────────────────────────────────────────────
 function refreshInsights(){
   const ip=el("tab-insights"); if(!ip)return;
   ip.innerHTML="";
@@ -862,13 +852,12 @@ function refreshInsights(){
   ip.append(mk("div",{cls:"legend"},...PEOPLE.map((p,i)=>mk("span",{cls:"legend-item"},mk("span",{cls:"legend-dot",style:`background:${i===0?"#c9a84c":"#8aafc9"}`}),p===S.user?p+" (you)":p))));
 }
 
+// ── Shopping ──────────────────────────────────────────────────────────────────
 const SHOP_COLORS=["","c-gold","c-blue","c-green"];
-let _shopInpEl=null; // kept alive across refreshes
+let _shopInpEl=null;
 
 function refreshShopping(){
   const sp=el("section-shopping"); if(!sp) return;
-
-  // ── Build input row once, never rebuild ───────────────────────────────────
   if(!_shopInpEl){
     let newItem="";
     _shopInpEl=mk("input",{cls:"shop-input",type:"text",placeholder:"Add item…",
@@ -878,37 +867,27 @@ function refreshShopping(){
     async function addItem(){
       if(!newItem.trim()) return;
       const item={id:Date.now().toString(),text:newItem.trim(),done:false,color:"",createdAt:new Date().toISOString()};
-      S.shopping=[item,...S.shopping];
-      _shopDirty=true;
-      setDot("dot-shopping","local");
-      rebuildShopList();
+      S.shopping=[item,...S.shopping]; _shopDirty=true;
+      setDot("dot-shopping","local"); rebuildShopList();
       _shopInpEl.value=""; newItem="";
       setTimeout(()=>_shopInpEl.focus(),0);
-      // start auto-save timer
       if(_shopAutoTimer) clearTimeout(_shopAutoTimer);
       _shopAutoTimer=setTimeout(()=>shopCommit(),10000);
     }
     const addBtn=mk("button",{cls:"shop-add-btn",type:"button",onClick:addItem},"+");
     const inputRow=mk("div",{cls:"shop-input-row"},_shopInpEl,addBtn);
     inputRow.id="shop-input-row";
-
     sp.innerHTML="";
     const wrap=mk("div",{cls:"body",id:"shop-wrap"},inputRow,mk("div",{id:"shop-list-wrap"}));
     sp.append(wrap);
   }
-
   rebuildShopList();
 }
 
 function rebuildShopList(){
   const wrap=el("shop-list-wrap"); if(!wrap) return;
   wrap.innerHTML="";
-
-  if(!S.shopping.length){
-    wrap.append(mk("p",{cls:"empty"},"Nothing on the list."));
-    return;
-  }
-
+  if(!S.shopping.length){wrap.append(mk("p",{cls:"empty"},"Nothing on the list."));return;}
   const ordered=[...S.shopping.filter(i=>!i.done),...S.shopping.filter(i=>i.done)];
   const listEl=mk("div",{id:"shop-list"});
   let dragSrc=null;
@@ -917,55 +896,36 @@ function rebuildShopList(){
     const color=item.color||"";
     const row=mk("div",{cls:"shop-item"+(item.done?" done":"")+(color?" "+color:"")});
     row.dataset.id=item.id;
-
     const handle=mk("span",{cls:"shop-handle"},"⠿");
-    handle.addEventListener("touchstart",e=>{
-      e.stopPropagation();
-      dragSrc=row;
-      row.classList.add("dragging");
-    },{passive:true});
-
+    handle.addEventListener("touchstart",e=>{e.stopPropagation();dragSrc=row;row.classList.add("dragging");},{passive:true});
     const check=mk("div",{cls:"shop-check",onClick:async()=>{
       await shopWrite(S.shopping.map(x=>x.id===item.id?{...x,done:!x.done}:x));
     }},item.done?"✓":"");
-
     const text=mk("span",{cls:"shop-text"},item.text);
-
-    // long-press on text only → inline edit
     let lpTimer=null;
     text.addEventListener("touchstart",e=>{
       lpTimer=setTimeout(()=>{
-        // build inline edit input
         const inp=mk("input",{type:"text",value:item.text,
-          style:"font-size:16px;font-family:'Georgia',serif;border:none;background:transparent;outline:none;width:100%;color:var(--ink);",
+          style:"font-size:16px;font-family:'Georgia',serif;border:none;background:transparent;outline:none;width:100%;color:var(--ink);"
         });
         inp.addEventListener("blur",async()=>{
           const val=inp.value.trim();
-          if(val&&val!==item.text){
-            await shopWrite(S.shopping.map(x=>x.id===item.id?{...x,text:val}:x));
-          } else {
-            rebuildShopList();
-          }
+          if(val&&val!==item.text) await shopWrite(S.shopping.map(x=>x.id===item.id?{...x,text:val}:x));
+          else rebuildShopList();
         });
         inp.addEventListener("keydown",e=>{if(e.key==="Enter"){inp.blur();}});
-        text.replaceWith(inp);
-        setTimeout(()=>inp.focus(),0);
+        text.replaceWith(inp); setTimeout(()=>inp.focus(),0);
       },600);
     },{passive:true});
     text.addEventListener("touchend",()=>clearTimeout(lpTimer));
     text.addEventListener("touchmove",()=>clearTimeout(lpTimer));
-
     const del=mk("button",{cls:"board-del",onClick:async()=>{
       await shopWrite(S.shopping.filter(x=>x.id!==item.id));
     }},"×");
-
     let swipeStartX=null;
-    row.addEventListener("touchstart",e=>{
-      if(e.target===handle) return;
-      swipeStartX=e.touches[0].clientX;
-    },{passive:true});
+    row.addEventListener("touchstart",e=>{if(e.target===handle)return;swipeStartX=e.touches[0].clientX;},{passive:true});
     row.addEventListener("touchend",e=>{
-      if(swipeStartX===null||e.target===handle) return;
+      if(swipeStartX===null||e.target===handle)return;
       const dx=e.changedTouches[0].clientX-swipeStartX;
       if(Math.abs(dx)<40){swipeStartX=null;return;}
       const cur=SHOP_COLORS.indexOf(item.color||"");
@@ -973,24 +933,20 @@ function rebuildShopList(){
       swipeStartX=null;
       shopWrite(S.shopping.map(x=>x.id===item.id?{...x,color:SHOP_COLORS[next]}:x));
     },{passive:true});
-
     row.append(handle,check,text,del);
     listEl.append(row);
   });
 
   listEl.addEventListener("touchmove",e=>{
-    if(!dragSrc) return;
-    e.preventDefault();
+    if(!dragSrc)return; e.preventDefault();
     const touch=e.touches[0];
     const els=[...listEl.querySelectorAll(".shop-item:not(.dragging)")];
     els.forEach(el=>el.classList.remove("drag-over"));
     const target=els.find(el=>{const r=el.getBoundingClientRect();return touch.clientY>=r.top&&touch.clientY<=r.bottom;});
     if(target) target.classList.add("drag-over");
   },{passive:false});
-
   listEl.addEventListener("touchend",async()=>{
-    if(!dragSrc) return;
-    dragSrc.classList.remove("dragging");
+    if(!dragSrc)return; dragSrc.classList.remove("dragging");
     const over=listEl.querySelector(".drag-over");
     if(over&&over!==dragSrc){
       over.classList.remove("drag-over");
@@ -1001,42 +957,30 @@ function rebuildShopList(){
       const [moved]=reordered.splice(srcIdx,1);
       reordered.splice(tgtIdx,0,moved);
       await shopWrite(reordered);
-    } else {
-      listEl.querySelectorAll(".drag-over").forEach(el=>el.classList.remove("drag-over"));
-    }
+    } else { listEl.querySelectorAll(".drag-over").forEach(el=>el.classList.remove("drag-over")); }
     dragSrc=null;
   });
-
   wrap.append(listEl);
 }
 
+// ── Blackboard ────────────────────────────────────────────────────────────────
 const BOARD_COLORS=["","c-gold","c-blue","c-green"];
 let _boardInpEl=null;
 
 function refreshBoard(){
   const bp=el("section-blackboard"); if(!bp) return;
-  if(_boardInpEl) { rebuildBoard(); return; }
-
-  // ── Build input once ──────────────────────────────────────────────────────
+  if(_boardInpEl){rebuildBoard();return;}
   _boardInpEl=mk("textarea",{cls:"board-input",placeholder:"New note…",rows:"2",
-    onInput:e=>{
-      _boardInpEl._val=e.target.value;
-      e.target.style.height="auto";
-      e.target.style.height=e.target.scrollHeight+"px";
-    }
+    onInput:e=>{_boardInpEl._val=e.target.value;e.target.style.height="auto";e.target.style.height=e.target.scrollHeight+"px";}
   });
   _boardInpEl._val="";
-
   const addBtn=mk("button",{cls:"shop-add-btn",type:"button",onClick:addNote},"+");
-
   async function addNote(){
     const text=(_boardInpEl._val||"").trim(); if(!text) return;
     const note={id:Date.now().toString(),text,color:"",person:S.user,createdAt:new Date().toISOString()};
     await boardWrite([note,...S.blackboard]);
-    _boardInpEl.value=""; _boardInpEl._val=""; _boardInpEl.style.height="";
-    _boardInpEl.focus();
+    _boardInpEl.value=""; _boardInpEl._val=""; _boardInpEl.style.height=""; _boardInpEl.focus();
   }
-
   bp.innerHTML="";
   const wrap=mk("div",{cls:"body",id:"board-wrap"},
     mk("div",{cls:"board-input-row"},_boardInpEl,addBtn),
@@ -1049,12 +993,7 @@ function refreshBoard(){
 function rebuildBoard(){
   const wrap=el("board-list-wrap"); if(!wrap) return;
   wrap.innerHTML="";
-
-  if(!S.blackboard.length){
-    wrap.append(mk("p",{cls:"empty"},"Board is empty."));
-    return;
-  }
-
+  if(!S.blackboard.length){wrap.append(mk("p",{cls:"empty"},"Board is empty."));return;}
   const listEl=mk("div",{id:"board-list"});
   let dragSrc=null;
 
@@ -1063,79 +1002,39 @@ function rebuildBoard(){
     const color=note.color||"";
     const row=mk("div",{cls:"board-note"+(color?" "+color:"")});
     row.dataset.id=note.id;
-
-    // drag handle
     const handle=mk("span",{cls:"board-note-handle"},"⠿");
-    handle.addEventListener("touchstart",e=>{
-      e.stopPropagation();
-      dragSrc=row;
-      row.classList.add("dragging");
-    },{passive:true});
-
-    // text area — collapsed by default
-    let expanded=false;
-    let editing=false;
-
+    handle.addEventListener("touchstart",e=>{e.stopPropagation();dragSrc=row;row.classList.add("dragging");},{passive:true});
+    let expanded=false,editing=false;
     const textEl=mk("div",{cls:"board-note-text"},note.text);
-
-    const metaEl=mk("div",{cls:"board-note-meta"},
-      (note.person===S.user?"You":note.person)+" · "+fmtDate(note.createdAt.slice(0,10))
-    );
-
+    const metaEl=mk("div",{cls:"board-note-meta"},(note.person===S.user?"You":note.person)+" · "+fmtDate(note.createdAt.slice(0,10)));
     const moreBtn=mk("button",{cls:"board-more"},"more");
     const actionsRow=mk("div",{cls:"board-note-actions"},moreBtn);
-    moreBtn.style.display="none"; // hidden until we measure
-
+    moreBtn.style.display="none";
     moreBtn.addEventListener("click",()=>{
-      if(!expanded){
-        expanded=true;
-        textEl.classList.add("expanded");
-        moreBtn.textContent="less";
-      } else {
-        expanded=false;
-        textEl.classList.remove("expanded");
-        moreBtn.textContent="more";
-      }
+      expanded=!expanded;
+      textEl.classList.toggle("expanded",expanded);
+      moreBtn.textContent=expanded?"less":"more";
     });
-
-    // tap text to edit (own notes only)
     if(isMine){
       textEl.addEventListener("click",()=>{
-        if(editing) return;
-        editing=true;
-        expanded=true;
+        if(editing)return; editing=true; expanded=true;
         const ta=mk("textarea",{cls:"board-note-text editing"});
-        ta.value=note.text;
-        ta.style.height="auto";
+        ta.value=note.text; ta.style.height="auto";
         setTimeout(()=>{ta.style.height=ta.scrollHeight+"px";},0);
-        ta.addEventListener("input",e=>{
-          e.target.style.height="auto";
-          e.target.style.height=e.target.scrollHeight+"px";
-        });
+        ta.addEventListener("input",e=>{e.target.style.height="auto";e.target.style.height=e.target.scrollHeight+"px";});
         ta.addEventListener("blur",async()=>{
-          const newText=ta.value.trim();
-          editing=false;
-          if(newText&&newText!==note.text){
-            await boardWrite(S.blackboard.map(n=>n.id===note.id?{...n,text:newText}:n));
-          } else {
-            rebuildBoard();
-          }
+          const newText=ta.value.trim(); editing=false;
+          if(newText&&newText!==note.text) await boardWrite(S.blackboard.map(n=>n.id===note.id?{...n,text:newText}:n));
+          else rebuildBoard();
         });
-        textEl.replaceWith(ta);
-        ta.focus();
-        moreBtn.style.display="none";
+        textEl.replaceWith(ta); ta.focus(); moreBtn.style.display="none";
       });
     }
-
-    // color swipe (own notes only)
     if(isMine){
       let swipeX=null;
-      row.addEventListener("touchstart",e=>{
-        if(e.target===handle) return;
-        swipeX=e.touches[0].clientX;
-      },{passive:true});
+      row.addEventListener("touchstart",e=>{if(e.target===handle)return;swipeX=e.touches[0].clientX;},{passive:true});
       row.addEventListener("touchend",e=>{
-        if(swipeX===null||e.target===handle) return;
+        if(swipeX===null||e.target===handle)return;
         const dx=e.changedTouches[0].clientX-swipeX;
         if(Math.abs(dx)<40){swipeX=null;return;}
         const cur=BOARD_COLORS.indexOf(note.color||"");
@@ -1144,32 +1043,25 @@ function rebuildBoard(){
         boardWrite(S.blackboard.map(n=>n.id===note.id?{...n,color:BOARD_COLORS[next]}:n));
       },{passive:true});
     }
-
     const noteBody=mk("div",{cls:"board-note-body"},textEl,metaEl,actionsRow);
-
     const del=isMine?mk("button",{cls:"board-del",onClick:async()=>{
       await boardWrite(S.blackboard.filter(n=>n.id!==note.id));
     }},"×"):null;
-
     row.append(handle,noteBody);
     if(del) row.append(del);
     listEl.append(row);
   });
 
-  // drag touchmove/end
   listEl.addEventListener("touchmove",e=>{
-    if(!dragSrc) return;
-    e.preventDefault();
+    if(!dragSrc)return; e.preventDefault();
     const touch=e.touches[0];
     const els=[...listEl.querySelectorAll(".board-note:not(.dragging)")];
     els.forEach(el=>el.classList.remove("drag-over"));
     const target=els.find(el=>{const r=el.getBoundingClientRect();return touch.clientY>=r.top&&touch.clientY<=r.bottom;});
     if(target) target.classList.add("drag-over");
   },{passive:false});
-
   listEl.addEventListener("touchend",async()=>{
-    if(!dragSrc) return;
-    dragSrc.classList.remove("dragging");
+    if(!dragSrc)return; dragSrc.classList.remove("dragging");
     const over=listEl.querySelector(".drag-over");
     if(over&&over!==dragSrc){
       over.classList.remove("drag-over");
@@ -1180,15 +1072,11 @@ function rebuildBoard(){
       const [moved]=reordered.splice(srcIdx,1);
       reordered.splice(tgtIdx,0,moved);
       await boardWrite(reordered);
-    } else {
-      listEl.querySelectorAll(".drag-over").forEach(el=>el.classList.remove("drag-over"));
-    }
+    } else { listEl.querySelectorAll(".drag-over").forEach(el=>el.classList.remove("drag-over")); }
     dragSrc=null;
   });
 
   wrap.append(listEl);
-
-  // show "more" only on notes that are actually clamped
   requestAnimationFrame(()=>{
     listEl.querySelectorAll(".board-note-text").forEach(t=>{
       const btn=t.closest(".board-note-body")?.querySelector(".board-more");
@@ -1199,7 +1087,7 @@ function rebuildBoard(){
 
 // ── Boot ──────────────────────────────────────────────────────────────────────
 renderRoot();
-if(S.url&&S.user){load();startPoll();}
+if(S.user){ startListeners(); setupFCM(); }
 </script>
 </body>
 </html>
