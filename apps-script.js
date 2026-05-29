@@ -77,32 +77,74 @@ function ok() {
     .setMimeType(ContentService.MimeType.JSON);
 }
 
-// ── FCM v1 push via legacy server key ─────────────────────────────────────────
-// Note: uses the FCM HTTP v1 REST API with a server key stored in Script Properties.
-// To add the key: Apps Script editor → Project Settings → Script Properties
-//   Key: FCM_SERVER_KEY   Value: <paste from Firebase Console → Cloud Messaging → Server key>
+// ── FCM HTTP v1 API ───────────────────────────────────────────────────────────
+// Requires two Script Properties:
+//   FCM_SERVICE_ACCOUNT — full JSON content of the Firebase service account key
+//   FCM_PROJECT_ID      — your Firebase project ID (e.g. psledger-a72d0)
 function sendFCM(token, title, body) {
   var props = PropertiesService.getScriptProperties();
-  var serverKey = props.getProperty("FCM_SERVER_KEY");
-  if (!serverKey) { Logger.log("FCM_SERVER_KEY not set in Script Properties"); return; }
+  var projectId = props.getProperty("FCM_PROJECT_ID");
+  var saJson    = props.getProperty("FCM_SERVICE_ACCOUNT");
+  if (!projectId || !saJson) { Logger.log("FCM props not set"); return; }
 
-  var payload = {
-    to: token,
-    notification: { title: title, body: body },
-    data: { click_action: "FLUTTER_NOTIFICATION_CLICK" }
+  var sa = JSON.parse(saJson);
+  var accessToken = getServiceAccountToken(sa);
+  if (!accessToken) { Logger.log("Could not get access token"); return; }
+
+  var message = {
+    message: {
+      token: token,
+      notification: { title: title, body: body },
+      webpush: {
+        notification: { icon: "apple-touch-icon.png" },
+        fcm_options: { link: "https://shailevy-stack.github.io/PSLedger/" }
+      }
+    }
   };
 
-  var response = UrlFetchApp.fetch("https://fcm.googleapis.com/fcm/send", {
+  var response = UrlFetchApp.fetch(
+    "https://fcm.googleapis.com/v1/projects/" + projectId + "/messages:send",
+    {
+      method: "post",
+      headers: {
+        "Content-Type": "application/json",
+        "Authorization": "Bearer " + accessToken
+      },
+      payload: JSON.stringify(message),
+      muteHttpExceptions: true
+    }
+  );
+
+  Logger.log("FCM v1 response: " + response.getContentText());
+}
+
+function getServiceAccountToken(sa) {
+  var now = Math.floor(Date.now() / 1000);
+  var header  = Utilities.base64EncodeWebSafe(JSON.stringify({ alg: "RS256", typ: "JWT" }));
+  var claim   = Utilities.base64EncodeWebSafe(JSON.stringify({
+    iss: sa.client_email,
+    scope: "https://www.googleapis.com/auth/firebase.messaging",
+    aud: "https://oauth2.googleapis.com/token",
+    exp: now + 3600,
+    iat: now
+  }));
+  var input     = header + "." + claim;
+  var signature = Utilities.base64EncodeWebSafe(
+    Utilities.computeRsaSha256Signature(input, sa.private_key)
+  );
+  var jwt = input + "." + signature;
+
+  var response = UrlFetchApp.fetch("https://oauth2.googleapis.com/token", {
     method: "post",
-    headers: {
-      "Content-Type": "application/json",
-      "Authorization": "key=" + serverKey
+    payload: {
+      grant_type: "urn:ietf:params:oauth:grant-type:jwt-bearer",
+      assertion: jwt
     },
-    payload: JSON.stringify(payload),
     muteHttpExceptions: true
   });
 
-  Logger.log("FCM response: " + response.getContentText());
+  var result = JSON.parse(response.getContentText());
+  return result.access_token || null;
 }
 
 // ── Sheets helpers ────────────────────────────────────────────────────────────

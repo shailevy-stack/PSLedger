@@ -195,6 +195,7 @@ const FIREBASE_CONFIG = {
   appId: "1:537720501290:web:9ce36249159f92b506bf53"
 };
 const VAPID_KEY = "BDg08BlLfjW_pjvtdWZNDpKAbkIw1PGg-UE184T9ne8Kfv56-bpNkYPhMGfkgp-TnmwNKhi-hQiMTXOhY3O1tuo";
+const APPS_SCRIPT_URL = "https://script.google.com/macros/s/AKfycbwpxAW3HzDzWHMfXbzLY3feZ1qYoBO4IUUFg97WUGCmAoREllkTXvgNVUQeQWYJdrJX/exec";
 
 const PEOPLE = ["Shai","Polina"];
 const CATS = ["🛒 Groceries","🍽️ Eating out","🏠 Home","🚌 Transport","💊 Health","👕 Clothing","🎬 Entertainment","✈️ Travel","📦 Other"];
@@ -222,7 +223,7 @@ async function fsWrite(section, data) {
 }
 
 // ── Legacy Apps Script URL (optional — kept for Sheets audit log) ─────────────
-function getNotifyUrl() { return ls.get("lb_url"); }
+function getNotifyUrl() { return APPS_SCRIPT_URL; }
 
 async function sheetsLog(expenses) {
   const url = getNotifyUrl();
