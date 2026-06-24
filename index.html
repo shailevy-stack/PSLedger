@@ -519,7 +519,7 @@ function buildPick(){
       ),
       mk("div",{style:"margin-top:36px;padding-top:20px;border-top:1px solid var(--border-d);"},
         mk("button",{cls:"reset-btn",style:"display:block;margin:0 auto;",onClick:()=>window.location.reload()},"↻ Reload app"),
-        mk("div",{style:"font-size:11px;color:#bbb;letter-spacing:0.08em;margin-top:8px;"},"v5.3"),
+        mk("div",{style:"font-size:11px;color:#bbb;letter-spacing:0.08em;margin-top:8px;"},"v5.4"),
       ),
     )
   );
@@ -947,32 +947,19 @@ function renderTrends(ip){
   wrap.innerHTML=svg;
   ip.append(wrap);
 
-  // Category color legend (only categories present in data)
-  const allCats=new Set(data.flatMap(m=>Object.keys(m.byCat)));
-  if(allCats.size){
-    const legend=mk("div",{style:"display:flex;flex-wrap:wrap;gap:6px 12px;margin-top:12px;padding:0 4px;"});
-    allCats.forEach(cat=>{
-      const color=CAT_COLORS[cat]||"#9e9e9e";
-      legend.append(mk("span",{style:"display:flex;align-items:center;gap:5px;font-size:11px;color:var(--ink-light);"},
-        mk("span",{style:`width:10px;height:10px;border-radius:2px;background:${color};flex-shrink:0;display:inline-block`}),
-        cat
-      ));
-    });
-    ip.append(legend);
-  }
-
-  // Monthly summary rows newest-first, showing person breakdown
+  // Monthly summary rows newest-first, showing total + person breakdown
   const summaryWrap=mk("div",{style:"margin-top:16px;"});
   [...data].reverse().forEach(m=>{
     if(!m.total) return;
     const lbl=new Date(m.year,m.month,1).toLocaleDateString("en-GB",{month:"long",year:"numeric"});
     const row=mk("div",{style:"display:flex;justify-content:space-between;align-items:center;padding:8px 0;border-bottom:1px solid var(--border-d);"});
-    const chips=mk("div",{style:"display:flex;gap:10px;"},
+    const right=mk("div",{style:"display:flex;align-items:center;gap:10px;"},
+      mk("span",{style:"font-size:14px;font-weight:bold;color:var(--ink);"},"€"+m.total.toFixed(2)),
       ...PEOPLE.map((p,pi)=>m.byPerson[p]>0?
         mk("span",{cls:"insight-chip",style:`color:${pi===0?"#a07830":"#4a7a9b"}`},`${p===S.user?"You":p} €${m.byPerson[p].toFixed(2)}`):null
       ).filter(Boolean)
     );
-    row.append(mk("span",{style:"font-size:13px;color:var(--ink-light);"},lbl),chips);
+    row.append(mk("span",{style:"font-size:13px;color:var(--ink-light);"},lbl),right);
     summaryWrap.append(row);
   });
   ip.append(summaryWrap);
