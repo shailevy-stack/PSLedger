@@ -519,7 +519,7 @@ function buildPick(){
       ),
       mk("div",{style:"margin-top:36px;padding-top:20px;border-top:1px solid var(--border-d);"},
         mk("button",{cls:"reset-btn",style:"display:block;margin:0 auto;",onClick:()=>window.location.reload()},"↻ Reload app"),
-        mk("div",{style:"font-size:11px;color:#bbb;letter-spacing:0.08em;margin-top:8px;"},"v5.4"),
+        mk("div",{style:"font-size:11px;color:#bbb;letter-spacing:0.08em;margin-top:8px;"},"v5.5"),
       ),
     )
   );
@@ -909,6 +909,11 @@ function renderTrends(ip){
     return {...m,byCat,byPerson,total};
   });
 
+  // Fixed stacking order: categories sorted by their overall total across all months (largest at bottom)
+  const overallTotals={};
+  data.forEach(m=>Object.entries(m.byCat).forEach(([cat,v])=>{overallTotals[cat]=(overallTotals[cat]||0)+v;}));
+  const stackOrder=Object.entries(overallTotals).sort((a,b)=>b[1]-a[1]).map(([cat])=>cat);
+
   const rawMax=Math.max(...data.map(m=>m.total),1);
   const mag=Math.pow(10,Math.floor(Math.log10(rawMax)));
   const n=rawMax/mag;
@@ -931,7 +936,7 @@ function renderTrends(ip){
   data.forEach((m,i)=>{
     const cx=padL+(i+0.5)*colW;
     const x=(cx-barW/2);
-    const sorted=Object.entries(m.byCat).sort((a,b)=>b[1]-a[1]);
+    const sorted=stackOrder.filter(cat=>m.byCat[cat]).map(cat=>[cat,m.byCat[cat]]);
     let stackY=padT+chartH;
     sorted.forEach(([cat,val])=>{
       const bh=(val/maxVal)*chartH;
