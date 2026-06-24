@@ -519,7 +519,7 @@ function buildPick(){
       ),
       mk("div",{style:"margin-top:36px;padding-top:20px;border-top:1px solid var(--border-d);"},
         mk("button",{cls:"reset-btn",style:"display:block;margin:0 auto;",onClick:()=>window.location.reload()},"↻ Reload app"),
-        mk("div",{style:"font-size:11px;color:#bbb;letter-spacing:0.08em;margin-top:8px;"},"v5.2"),
+        mk("div",{style:"font-size:11px;color:#bbb;letter-spacing:0.08em;margin-top:8px;"},"v5.3"),
       ),
     )
   );
@@ -909,8 +909,11 @@ function renderTrends(ip){
     return {...m,byCat,byPerson,total};
   });
 
-  const maxVal=Math.max(...data.map(m=>m.total),1);
-  const W=340,H=170,padL=36,padB=22,padT=10;
+  const rawMax=Math.max(...data.map(m=>m.total),1);
+  const mag=Math.pow(10,Math.floor(Math.log10(rawMax)));
+  const n=rawMax/mag;
+  const maxVal=(n<=1?1:n<=2?2:n<=2.5?2.5:n<=5?5:10)*mag;
+  const W=340,H=210,padL=36,padB=22,padT=10;
   const chartW=W-padL,chartH=H-padB-padT;
   const colW=chartW/months.length;
   const barW=Math.min(30,colW*0.62);
