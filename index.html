@@ -442,14 +442,23 @@ function setDot(id, state){ const d=el(id); if(d) d.className="sec-dot "+state; 
 // ── Write helpers ─────────────────────────────────────────────────────────────
 async function freshWrite(fn){
   if(writeLock)return; writeLock=true;
+  setDot("dot-ledger","saving");
   try{
-    const next=fn(S.expenses, S.memory, S.shopping);
+    const expRef=db.collection("sections").doc("expenses");
+    const memRef=db.collection("sections").doc("memory");
+    let next;
+    await db.runTransaction(async tx=>{
+      const [expSnap,memSnap]=await Promise.all([tx.get(expRef),tx.get(memRef)]);
+      let curExpenses=[]; if(expSnap.exists){try{curExpenses=JSON.parse(expSnap.data().data)||[];}catch(e){curExpenses=[];}}
+      let curMemory={}; if(memSnap.exists){try{curMemory=JSON.parse(memSnap.data().data)||{};}catch(e){curMemory={};}}
+      next=fn(curExpenses, curMemory, S.shopping);
+      const stamp={updatedAt:firebase.firestore.FieldValue.serverTimestamp(), updatedBy:S.user||"unknown"};
+      tx.set(expRef, {data:JSON.stringify(next.expenses), ...stamp});
+      tx.set(memRef, {data:JSON.stringify(next.memory), ...stamp});
+    });
     S.expenses=next.expenses; S.memory=next.memory; S.shopping=next.shopping||S.shopping;
     refreshHistory(); refreshBalance(); refreshInsights(); rebuildShopList();
     if(updateLogBtn) updateLogBtn();
-    setDot("dot-ledger","saving");
-    await fsWrite("expenses", S.expenses);
-    await fsWrite("memory", S.memory);
     setDot("dot-ledger","synced");
     sheetsLog(S.expenses);
     notifyPartner("PS Central", S.user+" added an expense");
