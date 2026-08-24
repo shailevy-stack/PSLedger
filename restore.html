@@ -1,0 +1,169 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1"/>
+  <title>PS Central — Restore expenses</title>
+  <script src="https://www.gstatic.com/firebasejs/12.14.0/firebase-app-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/12.14.0/firebase-firestore-compat.js"></script>
+  <style>
+    body { font-family: Georgia, serif; max-width: 640px; margin: 60px auto; padding: 0 20px; color: #2c2416; background: #faf8f3; }
+    h1 { font-size: 24px; margin-bottom: 6px; }
+    p  { color: #8a7a5a; font-size: 14px; margin-bottom: 16px; line-height: 1.6; }
+    label { display: block; font-size: 12px; text-transform: uppercase; letter-spacing: .08em; color: #8a7a5a; margin-bottom: 6px; margin-top: 18px; }
+    textarea { width: 100%; font-size: 13px; font-family: ui-monospace, monospace; border: 1px solid #ddd5c0; border-radius: 6px; background: #fffdf7; color: #2c2416; padding: 10px 12px; outline: none; box-sizing: border-box; min-height: 160px; }
+    button { padding: 12px 24px; background: #2c2416; color: #f5f0e8; border: none; border-radius: 8px; font-size: 15px; font-family: Georgia, serif; cursor: pointer; margin-top: 14px; margin-right: 8px; }
+    button:disabled { opacity: .5; cursor: default; }
+    #preview, #log { margin-top: 16px; font-size: 13px; line-height: 1.7; white-space: pre-wrap; background: #f0ede4; border-radius: 8px; padding: 16px; min-height: 40px; }
+    .ok  { color: #2d8a4e; }
+    .err { color: #b94040; }
+    .skip{ color: #8a7a5a; }
+    table { width: 100%; border-collapse: collapse; font-size: 12px; }
+    td, th { text-align: left; padding: 3px 6px; border-bottom: 1px solid #e5ddc9; }
+  </style>
+</head>
+<body>
+<h1>🩹 Restore expenses</h1>
+<p>
+  Paste rows recovered from the Google Sheet's <b>Log</b> tab (via File → Version history)
+  in the order <code>Date&#9;Person&#9;Amount&#9;Category&#9;Description</code> — exactly what
+  you get by selecting the cells in Sheets and copying (tab-separated). One expense per line.
+  Header row is optional and auto-skipped.
+</p>
+<p>
+  This merges recovered rows into the <b>live</b> Firestore expense list — it does not overwrite
+  anything. Rows that already match an existing expense (same date, person, amount, category,
+  description) are skipped automatically, so it's safe to paste more than you need.
+</p>
+
+<label>Recovered rows</label>
+<textarea id="input" placeholder="2026-08-10&#9;Shai&#9;42.50&#9;🛒 Groceries&#9;Supermarket run
+2026-08-11&#9;Polina&#9;18.00&#9;🍽️ Eating out&#9;Lunch"></textarea>
+
+<div>
+  <button id="previewBtn" onclick="doPreview()">Preview</button>
+  <button id="commitBtn" onclick="doCommit()" disabled>Restore into Firestore</button>
+</div>
+
+<div id="preview"></div>
+<div id="log"></div>
+
+<script>
+firebase.initializeApp({
+  apiKey: "AIzaSyBKOfdxSQhtdM2OL2BD1C-uQpkHNg_--jg",
+  authDomain: "psledger-a72d0.firebaseapp.com",
+  projectId: "psledger-a72d0",
+  storageBucket: "psledger-a72d0.firebasestorage.app",
+  messagingSenderId: "537720501290",
+  appId: "1:537720501290:web:9ce36249159f92b506bf53"
+});
+const db = firebase.firestore();
+
+function log(msg, cls) {
+  const d = document.getElementById("log");
+  const line = document.createElement("div");
+  if (cls) line.className = cls;
+  line.textContent = msg;
+  d.append(line);
+}
+
+function tok(t){return t.toLowerCase().replace(/[^a-zäöüßа-яёà-ž\s]/g,"").split(/\s+/).filter(w=>w.length>2);}
+function learn(mem,desc,cat){
+  tok(desc).forEach(w=>{if(!mem[w])mem[w]={};mem[w][cat]=(mem[w][cat]||0)+1;});
+}
+
+function parseRows(raw) {
+  const lines = raw.split("\n").map(l=>l.trim()).filter(Boolean);
+  const rows = [];
+  for (const line of lines) {
+    const parts = line.split("\t").length >= 5 ? line.split("\t") : line.split(",");
+    if (parts.length < 5) continue;
+    const [date, person, amountStr, category, ...descParts] = parts.map(p=>p.trim());
+    if (date.toLowerCase() === "date" && person.toLowerCase() === "person") continue; // header
+    const amount = parseFloat(amountStr.replace(/[^0-9.\-]/g,""));
+    const description = descParts.join(", ").trim();
+    if (!date || !person || !amount || !description) continue;
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) continue;
+    rows.push({ date, person, amount, category, description });
+  }
+  return rows;
+}
+
+function sig(e){ return [e.date,e.person,e.amount,e.category,e.description].join("|"); }
+
+let parsedRows = [];
+
+async function doPreview() {
+  document.getElementById("preview").innerHTML = "";
+  document.getElementById("log").innerHTML = "";
+  document.getElementById("commitBtn").disabled = true;
+  parsedRows = parseRows(document.getElementById("input").value);
+  if (!parsedRows.length) {
+    document.getElementById("preview").textContent = "No valid rows found. Check the format.";
+    return;
+  }
+
+  const snap = await db.collection("sections").doc("expenses").get();
+  let current = [];
+  if (snap.exists) { try { current = JSON.parse(snap.data().data) || []; } catch(e) {} }
+  const existing = new Set(current.map(sig));
+
+  const toAdd = parsedRows.filter(r => !existing.has(sig(r)));
+  const skipped = parsedRows.length - toAdd.length;
+
+  let html = `<b>${current.length}</b> expenses currently in Firestore.<br>`;
+  html += `<b>${toAdd.length}</b> row(s) will be added, <b>${skipped}</b> skipped as duplicates.<br><br>`;
+  if (toAdd.length) {
+    html += "<table><tr><th>Date</th><th>Person</th><th>Amount</th><th>Category</th><th>Description</th></tr>";
+    toAdd.forEach(r => {
+      html += `<tr><td>${r.date}</td><td>${r.person}</td><td>${r.amount}</td><td>${r.category}</td><td>${r.description}</td></tr>`;
+    });
+    html += "</table>";
+  }
+  document.getElementById("preview").innerHTML = html;
+  parsedRows = toAdd;
+  document.getElementById("commitBtn").disabled = toAdd.length === 0;
+}
+
+async function doCommit() {
+  const btn = document.getElementById("commitBtn");
+  btn.disabled = true;
+  document.getElementById("log").innerHTML = "";
+  if (!parsedRows.length) { log("Nothing to restore.", "err"); return; }
+
+  try {
+    const expRef = db.collection("sections").doc("expenses");
+    const memRef = db.collection("sections").doc("memory");
+    await db.runTransaction(async tx => {
+      const [expSnap, memSnap] = await Promise.all([tx.get(expRef), tx.get(memRef)]);
+      let curExpenses = []; if (expSnap.exists) { try { curExpenses = JSON.parse(expSnap.data().data) || []; } catch(e) {} }
+      let curMemory = {}; if (memSnap.exists) { try { curMemory = JSON.parse(memSnap.data().data) || {}; } catch(e) {} }
+
+      const existing = new Set(curExpenses.map(sig));
+      const now = Date.now();
+      const added = [];
+      parsedRows.forEach((r, i) => {
+        if (existing.has(sig(r))) return; // re-check inside the transaction
+        const entry = { id: (now + i).toString(), person: r.person, amount: r.amount,
+          description: r.description, category: r.category, date: r.date,
+          createdAt: new Date().toISOString() };
+        added.push(entry);
+        learn(curMemory, r.description, r.category);
+      });
+
+      const nextExpenses = [...curExpenses, ...added].sort((a,b)=>b.date.localeCompare(a.date));
+      const stamp = { updatedAt: firebase.firestore.FieldValue.serverTimestamp(), updatedBy: "restore" };
+      tx.set(expRef, { data: JSON.stringify(nextExpenses), ...stamp });
+      tx.set(memRef, { data: JSON.stringify(curMemory), ...stamp });
+      window._restoredCount = added.length;
+    });
+    log(`✓ Restored ${window._restoredCount} expense(s) into Firestore.`, "ok");
+    log("Open the main app to verify — the History tab should update live.", "ok");
+  } catch(e) {
+    log("Error: " + e.message, "err");
+    btn.disabled = false;
+  }
+}
+</script>
+</body>
+</html>
