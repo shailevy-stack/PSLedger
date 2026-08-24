@@ -5,6 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1"/>
   <title>PS Central — Migrate to Firebase</title>
   <script src="https://www.gstatic.com/firebasejs/12.14.0/firebase-app-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/12.14.0/firebase-auth-compat.js"></script>
   <script src="https://www.gstatic.com/firebasejs/12.14.0/firebase-firestore-compat.js"></script>
   <style>
     body { font-family: Georgia, serif; max-width: 560px; margin: 60px auto; padding: 0 20px; color: #2c2416; background: #faf8f3; }
@@ -40,6 +41,17 @@ firebase.initializeApp({
 });
 const db = firebase.firestore();
 
+let _authReady=null;
+function ensureAuth(){
+  if(!_authReady){
+    _authReady=new Promise((resolve,reject)=>{
+      const unsub=firebase.auth().onAuthStateChanged(user=>{ if(user){ unsub(); resolve(user); } }, reject);
+      firebase.auth().signInAnonymously().catch(reject);
+    });
+  }
+  return _authReady;
+}
+
 function log(msg, cls) {
   const d = document.getElementById("log");
   const line = document.createElement("div");
@@ -69,6 +81,8 @@ async function run() {
     const blackboard= Array.isArray(data.blackboard) ? data.blackboard: [];
 
     log(`Found: ${expenses.length} expenses, ${shopping.length} shopping items, ${blackboard.length} board notes.`);
+    log("Signing in…");
+    await ensureAuth();
     log("Writing to Firestore…");
 
     await db.collection("sections").doc("expenses").set({

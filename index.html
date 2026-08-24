@@ -13,6 +13,7 @@
 
   <!-- Firebase -->
   <script src="https://www.gstatic.com/firebasejs/12.14.0/firebase-app-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/12.14.0/firebase-auth-compat.js"></script>
   <script src="https://www.gstatic.com/firebasejs/12.14.0/firebase-firestore-compat.js"></script>
   <script src="https://www.gstatic.com/firebasejs/12.14.0/firebase-messaging-compat.js"></script>
 
@@ -212,6 +213,18 @@ try {
   // already initialized (hot reload)
   db = firebase.firestore();
   try { messaging = firebase.messaging(); } catch(_) {}
+}
+
+// ── Auth ──────────────────────────────────────────────────────────────────────
+let _authReady=null;
+function ensureAuth(){
+  if(!_authReady){
+    _authReady=new Promise((resolve,reject)=>{
+      const unsub=firebase.auth().onAuthStateChanged(user=>{ if(user){ unsub(); resolve(user); } }, reject);
+      firebase.auth().signInAnonymously().catch(reject);
+    });
+  }
+  return _authReady;
 }
 
 // ── Firestore helpers ─────────────────────────────────────────────────────────
@@ -442,14 +455,23 @@ function setDot(id, state){ const d=el(id); if(d) d.className="sec-dot "+state; 
 // ── Write helpers ─────────────────────────────────────────────────────────────
 async function freshWrite(fn){
   if(writeLock)return; writeLock=true;
+  setDot("dot-ledger","saving");
   try{
-    const next=fn(S.expenses, S.memory, S.shopping);
+    const expRef=db.collection("sections").doc("expenses");
+    const memRef=db.collection("sections").doc("memory");
+    let next;
+    await db.runTransaction(async tx=>{
+      const [expSnap,memSnap]=await Promise.all([tx.get(expRef),tx.get(memRef)]);
+      let curExpenses=[]; if(expSnap.exists){try{curExpenses=JSON.parse(expSnap.data().data)||[];}catch(e){curExpenses=[];}}
+      let curMemory={}; if(memSnap.exists){try{curMemory=JSON.parse(memSnap.data().data)||{};}catch(e){curMemory={};}}
+      next=fn(curExpenses, curMemory, S.shopping);
+      const stamp={updatedAt:firebase.firestore.FieldValue.serverTimestamp(), updatedBy:S.user||"unknown"};
+      tx.set(expRef, {data:JSON.stringify(next.expenses), ...stamp});
+      tx.set(memRef, {data:JSON.stringify(next.memory), ...stamp});
+    });
     S.expenses=next.expenses; S.memory=next.memory; S.shopping=next.shopping||S.shopping;
     refreshHistory(); refreshBalance(); refreshInsights(); rebuildShopList();
     if(updateLogBtn) updateLogBtn();
-    setDot("dot-ledger","saving");
-    await fsWrite("expenses", S.expenses);
-    await fsWrite("memory", S.memory);
     setDot("dot-ledger","synced");
     sheetsLog(S.expenses);
     notifyPartner("PS Central", S.user+" added an expense");
@@ -510,11 +532,11 @@ function buildPick(){
       mk("h1",{cls:"card-title"},"PS Central"),
       mk("div",{style:"height:32px;"}),
       mk("div",{cls:"pick-buttons"},
-        ...PEOPLE.map(p=>mk("button",{cls:"pick-btn",onClick:()=>{
+        ...PEOPLE.map(p=>mk("button",{cls:"pick-btn",onClick:async()=>{
           ls.set("lb_user",p); S.user=p;
           renderRoot();
-          startListeners();
-          setupFCM();
+          try{ await ensureAuth(); startListeners(); setupFCM(); }
+          catch(e){ S.loading=false; S.loadErr="Sign-in failed: "+e.message; refreshHistory(); }
         }},p))
       ),
       mk("div",{style:"margin-top:36px;padding-top:20px;border-top:1px solid var(--border-d);"},
@@ -1290,7 +1312,10 @@ function rebuildBoard(){
 
 // ── Boot ──────────────────────────────────────────────────────────────────────
 renderRoot();
-if(S.user){ startListeners(); setupFCM(); }
+if(S.user){
+  ensureAuth().then(()=>{ startListeners(); setupFCM(); })
+    .catch(e=>{ S.loading=false; S.loadErr="Sign-in failed: "+e.message; refreshHistory(); });
+}
 </script>
 </body>
 </html>
