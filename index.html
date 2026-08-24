@@ -13,6 +13,7 @@
 
   <!-- Firebase -->
   <script src="https://www.gstatic.com/firebasejs/12.14.0/firebase-app-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/12.14.0/firebase-auth-compat.js"></script>
   <script src="https://www.gstatic.com/firebasejs/12.14.0/firebase-firestore-compat.js"></script>
   <script src="https://www.gstatic.com/firebasejs/12.14.0/firebase-messaging-compat.js"></script>
 
@@ -212,6 +213,18 @@ try {
   // already initialized (hot reload)
   db = firebase.firestore();
   try { messaging = firebase.messaging(); } catch(_) {}
+}
+
+// ── Auth ──────────────────────────────────────────────────────────────────────
+let _authReady=null;
+function ensureAuth(){
+  if(!_authReady){
+    _authReady=new Promise((resolve,reject)=>{
+      const unsub=firebase.auth().onAuthStateChanged(user=>{ if(user){ unsub(); resolve(user); } }, reject);
+      firebase.auth().signInAnonymously().catch(reject);
+    });
+  }
+  return _authReady;
 }
 
 // ── Firestore helpers ─────────────────────────────────────────────────────────
@@ -519,11 +532,11 @@ function buildPick(){
       mk("h1",{cls:"card-title"},"PS Central"),
       mk("div",{style:"height:32px;"}),
       mk("div",{cls:"pick-buttons"},
-        ...PEOPLE.map(p=>mk("button",{cls:"pick-btn",onClick:()=>{
+        ...PEOPLE.map(p=>mk("button",{cls:"pick-btn",onClick:async()=>{
           ls.set("lb_user",p); S.user=p;
           renderRoot();
-          startListeners();
-          setupFCM();
+          try{ await ensureAuth(); startListeners(); setupFCM(); }
+          catch(e){ S.loading=false; S.loadErr="Sign-in failed: "+e.message; refreshHistory(); }
         }},p))
       ),
       mk("div",{style:"margin-top:36px;padding-top:20px;border-top:1px solid var(--border-d);"},
@@ -1299,7 +1312,10 @@ function rebuildBoard(){
 
 // ── Boot ──────────────────────────────────────────────────────────────────────
 renderRoot();
-if(S.user){ startListeners(); setupFCM(); }
+if(S.user){
+  ensureAuth().then(()=>{ startListeners(); setupFCM(); })
+    .catch(e=>{ S.loading=false; S.loadErr="Sign-in failed: "+e.message; refreshHistory(); });
+}
 </script>
 </body>
 </html>
