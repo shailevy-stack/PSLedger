@@ -331,6 +331,12 @@ let _boardDirty=false;
 let _shopAutoTimer=null;
 let _boardAutoTimer=null;
 
+let _relistenTimer=null;
+function scheduleRelisten(){
+  if(_relistenTimer) return;
+  _relistenTimer=setTimeout(()=>{ _relistenTimer=null; startListeners(); }, 3000);
+}
+
 function startListeners() {
   _listeners.forEach(u => u());
   _listeners = [];
@@ -357,12 +363,12 @@ function startListeners() {
     S.loading=false; S.loadErr="";
     refreshHistory(); refreshBalance(); refreshInsights();
     if (updateLogBtn) updateLogBtn();
-  }, err => { S.loading=false; S.loadErr=err.message; refreshHistory(); });
+  }, err => { S.loading=false; S.loadErr=err.message; refreshHistory(); scheduleRelisten(); });
 
   const memUnsub = db.collection("sections").doc("memory").onSnapshot(snap => {
     if (!snap.exists) return;
     try { S.memory = JSON.parse(snap.data().data) || {}; } catch(e) {}
-  });
+  }, err => { scheduleRelisten(); });
 
   const shopUnsub = db.collection("sections").doc("shopping").onSnapshot(snap => {
     if (!snap.exists) { rebuildShopList(); return; }
@@ -389,7 +395,7 @@ function startListeners() {
       if(cleared.length!==S.shopping.length){ S.shopping=cleared; fsWrite("shopping",cleared); }
       ls.set("shop_clear_date",today);
     } else if(!lastClear) ls.set("shop_clear_date",today);
-  });
+  }, err => { scheduleRelisten(); });
 
   const boardUnsub = db.collection("sections").doc("blackboard").onSnapshot(snap => {
     if (!snap.exists) { rebuildBoard(); return; }
@@ -408,13 +414,13 @@ function startListeners() {
     }
     if (fromMe || _lastSeenBoardHash === null) _lastSeenBoardHash = newHash;
     rebuildBoard();
-  });
+  }, err => { scheduleRelisten(); });
 
   const metaUnsub = db.collection("sections").doc("meta").onSnapshot(snap => {
     if (!snap.exists) return;
     try { const d=snap.data(); S.meta=d.data?JSON.parse(d.data):{}; } catch(e) { S.meta={}; }
     refreshBalance();
-  });
+  }, err => { scheduleRelisten(); });
 
   _listeners = [expUnsub, memUnsub, shopUnsub, boardUnsub, metaUnsub];
 }
@@ -494,7 +500,10 @@ async function shopCommit(){
     _lastSeenShoppingHash=S.shopping.map(i=>i.id+i.done+i.color).join("|");
     setDot("dot-shopping","synced");
     notifyPartner("PS Central", S.user+" updated the shopping list");
-  }catch(e){ setDot("dot-shopping","local"); alert("Save failed: "+e.message); }
+  }catch(e){
+    _shopDirty=false;
+    setDot("dot-shopping","local"); alert("Save failed: "+e.message);
+  }
 }
 
 async function boardWrite(newBoard){
@@ -512,7 +521,10 @@ async function boardCommit(){
     _lastSeenBoardHash=S.blackboard.map(n=>n.id+n.text+n.color).join("|");
     setDot("dot-board","synced");
     notifyPartner("PS Central", S.user+" updated the board");
-  }catch(e){ setDot("dot-board","local"); alert("Save failed: "+e.message); }
+  }catch(e){
+    _boardDirty=false;
+    setDot("dot-board","local"); alert("Save failed: "+e.message);
+  }
 }
 
 // ── Root renderer ─────────────────────────────────────────────────────────────
@@ -541,7 +553,7 @@ function buildPick(){
       ),
       mk("div",{style:"margin-top:36px;padding-top:20px;border-top:1px solid var(--border-d);"},
         mk("button",{cls:"reset-btn",style:"display:block;margin:0 auto;",onClick:()=>window.location.reload()},"↻ Reload app"),
-        mk("div",{style:"font-size:11px;color:#bbb;letter-spacing:0.08em;margin-top:8px;"},"v5.6"),
+        mk("div",{style:"font-size:11px;color:#bbb;letter-spacing:0.08em;margin-top:8px;"},"v5.7"),
       ),
     )
   );
@@ -1316,6 +1328,14 @@ if(S.user){
   ensureAuth().then(()=>{ startListeners(); setupFCM(); })
     .catch(e=>{ S.loading=false; S.loadErr="Sign-in failed: "+e.message; refreshHistory(); });
 }
+
+// Firestore's realtime stream can stall silently (backgrounded tab, network
+// switch) without ever calling the onSnapshot error callback — nudge it back
+// to life whenever the app regains focus or connectivity.
+document.addEventListener("visibilitychange", () => {
+  if (document.visibilityState === "visible" && S.user) startListeners();
+});
+window.addEventListener("online", () => { if (S.user) startListeners(); });
 </script>
 </body>
 </html>
