@@ -239,7 +239,7 @@
     .amount-input { border:none; background:transparent; color:var(--label); outline:none; padding:0; width:100%; min-width:0; caret-color:var(--tint); }
     .amount-input::placeholder { color:var(--label3); }
     .amount-hint { font-size:13px; color:var(--label2); margin-top:2px; }
-    .cats { display:grid; grid-template-columns:repeat(5,1fr); gap:12px 4px; padding:2px 12px 20px; }
+    .cats { display:grid; grid-template-columns:repeat(4,1fr); gap:12px 4px; padding:2px 12px 20px; }
     .cat { display:flex; flex-direction:column; align-items:center; gap:5px; background:none; border:none; font-family:inherit; font-size:11px; color:var(--label2); cursor:pointer; padding:0; min-width:0; transition:transform .15s; }
     .cat:active { transform:scale(.9); }
     .cat-ic { width:52px; height:52px; border-radius:14px; display:grid; place-items:center; font-size:26px; background:var(--cell); transition:box-shadow .2s, background .2s, transform .28s cubic-bezier(.3,1.5,.5,1); }
@@ -377,7 +377,8 @@ const VAPID_KEY = "BDg08BlLfjW_pjvtdWZNDpKAbkIw1PGg-UE184T9ne8Kfv56-bpNkYPhMGfkg
 const APPS_SCRIPT_URL = "https://script.google.com/macros/s/AKfycbwpxAW3HzDzWHMfXbzLY3feZ1qYoBO4IUUFg97WUGCmAoREllkTXvgNVUQeQWYJdrJX/exec";
 
 const PEOPLE = ["Shai","Polina"];
-const CATS = ["🛒 Groceries","🍽️ Eating out","🏠 Home","🚌 Transport","💊 Health","👕 Clothing","🎬 Entertainment","✈️ Travel","📦 Other"];
+// Clothing is retired from the picker; its colour stays so older expenses still render.
+const CATS = ["🛒 Groceries","🍽️ Eating out","🏠 Home","🚌 Transport","💊 Health","🎬 Entertainment","✈️ Travel","📦 Other"];
 const CAT_COLORS = {"🛒 Groceries":"#5a9e6f","🍽️ Eating out":"#e07820","🏠 Home":"#8b6b4e","🚌 Transport":"#5b8cc5","💊 Health":"#c05050","👕 Clothing":"#9b6cc5","🎬 Entertainment":"#c56b8b","✈️ Travel":"#5bbcb0","📦 Other":"#9e9e9e"};
 const ls = { get:k=>localStorage.getItem(k)||"", set:(k,v)=>localStorage.setItem(k,v), del:k=>localStorage.removeItem(k) };
 
@@ -452,7 +453,7 @@ function inferCat(mem,desc){
   const words=tok(desc); if(!words.length) return null;
   const sc={}; CATS.forEach(c=>sc[c]=0);
   words.forEach(w=>{if(mem[w])Object.entries(mem[w]).forEach(([c,n])=>{sc[c]=(sc[c]||0)+n;});});
-  const best=Object.entries(sc).sort((a,b)=>b[1]-a[1])[0];
+  const best=Object.entries(sc).filter(([c])=>CATS.includes(c)).sort((a,b)=>b[1]-a[1])[0];
   return best&&best[1]>0?best[0]:null;
 }
 function learn(mem,desc,cat){
@@ -768,7 +769,7 @@ function buildPick(){
       ),
       mk("div",{style:"margin-top:36px;padding-top:20px;border-top:1px solid var(--border-d);"},
         mk("button",{cls:"reset-btn",style:"display:block;margin:0 auto;",onClick:()=>window.location.reload()},"↻ Reload app"),
-        mk("div",{style:"font-size:11px;color:#bbb;letter-spacing:0.08em;margin-top:8px;"},"v6.2"),
+        mk("div",{style:"font-size:11px;color:#bbb;letter-spacing:0.08em;margin-top:8px;"},"v6.3"),
       ),
     )
   );
@@ -1110,7 +1111,7 @@ function rebuildHistChips(){
   const box=el("hist-chips"); if(!box) return;
   const partner=PEOPLE.find(p=>p!==S.user);
   const used=new Set(S.expenses.map(e=>e.category));
-  const defs=[["all","All"],["me","You"],["partner",partner],...CATS.filter(c=>used.has(c)).map(c=>["cat:"+c,c])];
+  const defs=[["all","All"],["me","You"],["partner",partner],...[...new Set([...CATS,...used])].filter(c=>used.has(c)).map(c=>["cat:"+c,c])];
   if(!defs.some(([k])=>k===S.histFilter)) S.histFilter="all";
   const sl=box.scrollLeft; box.innerHTML="";
   defs.forEach(([k,l])=>box.append(mk("button",{cls:"chip"+(k===S.histFilter?" on":""),type:"button",onClick:()=>{
@@ -1387,29 +1388,39 @@ function openCategorySheet(cat,key){
 
 function renderTrends(ip){
   const now=new Date();
-  const activeCats=S.trendsActiveCats===null?new Set(CATS):new Set(S.trendsActiveCats);
-  ip.append(mk("div",{cls:"chips"},...CATS.map(cat=>{
-    const on=activeCats.has(cat);
-    return mk("button",{cls:"chip"+(on?" on-soft":""),type:"button",style:on?`--cc:${CAT_COLORS[cat]}`:"",onClick:()=>{
-      const cur=S.trendsActiveCats===null?new Set(CATS):new Set(S.trendsActiveCats);
+  // offered categories plus any retired ones that still have expenses (e.g. Clothing)
+  const allCats=[...new Set([...CATS,...S.expenses.map(e=>e.category)])];
+  const activeSet=()=>S.trendsActiveCats===null?new Set(allCats):new Set(S.trendsActiveCats);
+  const paintChip=(b,cat,on)=>{ b.classList.toggle("on-soft",on); b.style.cssText=on?`--cc:${CAT_COLORS[cat]||"#9e9e9e"}`:""; };
+  ip.append(mk("div",{cls:"chips"},...allCats.map(cat=>{
+    const b=mk("button",{cls:"chip",type:"button",onClick:()=>{
+      const cur=activeSet();
       if(cur.has(cat)){ if(cur.size>1) cur.delete(cat); } else cur.add(cat);
-      S.trendsActiveCats=[...cur]; haptic(); refreshInsights();
+      S.trendsActiveCats=[...cur]; haptic();
+      paintChip(b,cat,cur.has(cat)); compute(); draw();
     }},cat);
+    paintChip(b,cat,activeSet().has(cat));
+    return b;
   })));
 
   const months=[];
   for(let i=5;i>=0;i--){ const d=new Date(now.getFullYear(),now.getMonth()-i,1); months.push({key:monthKeyOf(d),label:d.toLocaleDateString("en-GB",{month:"short"})}); }
-  const data=months.map(m=>{
-    const byCat={},byPerson={};
-    S.expenses.forEach(e=>{ if(e.date.startsWith(m.key)&&activeCats.has(e.category)){ byCat[e.category]=(byCat[e.category]||0)+e.amount; byPerson[e.person]=(byPerson[e.person]||0)+e.amount; } });
-    return {...m,byCat,byPerson,total:Object.values(byCat).reduce((s,v)=>s+v,0)};
-  });
-  const overall={};
-  data.forEach(m=>Object.entries(m.byCat).forEach(([c,v])=>overall[c]=(overall[c]||0)+v));
-  const stackOrder=Object.entries(overall).sort((a,b)=>b[1]-a[1]).map(([c])=>c);
-  const rawMax=Math.max(...data.map(m=>m.total),1);
-  const mag=Math.pow(10,Math.floor(Math.log10(rawMax))), nrm=rawMax/mag;
-  const maxVal=(nrm<=1?1:nrm<=2?2:nrm<=2.5?2.5:nrm<=5?5:10)*mag;
+  let data,stackOrder,maxVal;
+  function compute(){
+    const activeCats=activeSet();
+    data=months.map(m=>{
+      const byCat={},byPerson={};
+      S.expenses.forEach(e=>{ if(e.date.startsWith(m.key)&&activeCats.has(e.category)){ byCat[e.category]=(byCat[e.category]||0)+e.amount; byPerson[e.person]=(byPerson[e.person]||0)+e.amount; } });
+      return {...m,byCat,byPerson,total:Object.values(byCat).reduce((s,v)=>s+v,0)};
+    });
+    const overall={};
+    data.forEach(m=>Object.entries(m.byCat).forEach(([c,v])=>overall[c]=(overall[c]||0)+v));
+    stackOrder=Object.entries(overall).sort((a,b)=>b[1]-a[1]).map(([c])=>c);
+    const rawMax=Math.max(...data.map(m=>m.total),1);
+    const mag=Math.pow(10,Math.floor(Math.log10(rawMax))), nrm=rawMax/mag;
+    maxVal=(nrm<=1?1:nrm<=2?2:nrm<=2.5?2.5:nrm<=5?5:10)*mag;
+  }
+  compute();
   const W=340,H=200,padL=36,padB=22,padT=10, chartH=H-padB-padT, colW=(W-padL)/6, barW=Math.min(30,colW*.6);
 
   const chart=mk("div",{cls:"chart-card"});
