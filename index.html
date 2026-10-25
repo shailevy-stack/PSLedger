@@ -227,8 +227,9 @@
     .cell-input { flex:1; min-width:0; border:none; background:transparent; font-family:inherit; font-size:17px; color:var(--label); outline:none; padding:13px 0; }
     .cell-input::placeholder { color:var(--label3); }
     .cell-label { flex:1; font-size:17px; }
-    .date-wrap { position:relative; display:inline-block; }
-    .date-pill { display:inline-block; background:var(--fill); border-radius:7px; padding:6px 11px; font-size:17px; }
+    .date-pill { position:relative; display:inline-flex; align-items:center; gap:6px; background:var(--tint-soft); color:var(--tint); border-radius:8px; padding:7px 12px; font-size:15px; font-weight:600; transition:transform .15s; }
+    .date-pill:active { transform:scale(.94); }
+    .link-btn { background:none; border:none; color:var(--tint); font-family:inherit; font-size:15px; padding:8px 4px; cursor:pointer; }
     .date-overlay { position:absolute; inset:0; width:100%; height:100%; opacity:0; cursor:pointer; font-size:16px; }
     .amount { text-align:center; padding:12px 16px 18px; cursor:text; }
     .amount-row { display:inline-flex; align-items:baseline; justify-content:center; max-width:100%; }
@@ -769,7 +770,7 @@ function buildPick(){
       ),
       mk("div",{style:"margin-top:36px;padding-top:20px;border-top:1px solid var(--border-d);"},
         mk("button",{cls:"reset-btn",style:"display:block;margin:0 auto;",onClick:()=>window.location.reload()},"↻ Reload app"),
-        mk("div",{style:"font-size:11px;color:#bbb;letter-spacing:0.08em;margin-top:8px;"},"v6.3"),
+        mk("div",{style:"font-size:11px;color:#bbb;letter-spacing:0.08em;margin-top:8px;"},"v6.4"),
       ),
     )
   );
@@ -788,6 +789,7 @@ const ICON={
   chevron:_svg('<path d="M8 11l6 6 6-6"/>',16,2.4),
   left:_svg('<path d="M17 7l-7 7 7 7"/>',20,2.4),
   right:_svg('<path d="M11 7l7 7-7 7"/>',20,2.4),
+  calendar:_svg('<rect x="4.5" y="6" width="19" height="17" rx="3.5"/><path d="M4.5 11.5h19M10 3.5v5M18 3.5v5"/>',17,2.2),
   search:_svg('<circle cx="12.5" cy="12.5" r="6.5"/><path d="M17.5 17.5L22 22"/>',18,2.2),
 };
 function avatarEl(p){ return mk("span",{cls:"avatar "+(p===PEOPLE[0]?"av-a":"av-b")},(p||"?")[0]); }
@@ -1056,16 +1058,27 @@ function expenseFields(init,opts){
   });
   descIn.addEventListener("keydown",e=>{ if(e.key==="Enter") descIn.blur(); });
 
-  const datePill=mk("span",{cls:"date-pill"},fmtDate(date));
-  const dateIn=mk("input",{type:"date",cls:"date-overlay","aria-label":"Date"}); dateIn.value=date;
-  dateIn.addEventListener("change",()=>{ if(!dateIn.value) return; date=dateIn.value; datePill.textContent=fmtDate(date); changed(); });
+  // The chosen date reads as a value; the "Date" button opens the native picker.
+  const dateVal=mk("span",{cls:"cell-label"});
+  const dateIn=mk("input",{type:"date",cls:"date-overlay","aria-label":"Pick date"}); dateIn.value=date;
+  const todayLink=mk("button",{cls:"link-btn",type:"button",onClick:()=>{ haptic(); setDate(todayStr()); }},"Today");
+  const dateBtn=mk("span",{cls:"date-pill"}); dateBtn.innerHTML=ICON.calendar+"<span>Date</span>"; dateBtn.append(dateIn);
+  function setDate(d,quiet){
+    date=d; dateIn.value=d;
+    const isToday=d===todayStr();
+    dateVal.textContent=isToday?"Today":new Date(d+"T12:00:00").toLocaleDateString("en-GB",{weekday:"short",day:"numeric",month:"short"})+(fmtDate(d)==="Yesterday"?" · Yesterday":"");
+    todayLink.style.display=isToday?"none":"";
+    if(!quiet) changed();
+  }
+  dateIn.addEventListener("change",()=>{ if(dateIn.value) setDate(dateIn.value); });
+  setDate(date,true);
 
   const el=mk("div",{},
     amountBlock,
     mk("div",{cls:"group"},mk("div",{cls:"cell"},descIn)),
     mk("div",{cls:"sec-head"},mk("span",{},"Category"),sugg),
     picker,
-    mk("div",{cls:"group"},mk("div",{cls:"cell"},mk("span",{cls:"cell-label"},"Date"),mk("span",{cls:"date-wrap"},datePill,dateIn))),
+    mk("div",{cls:"group"},mk("div",{cls:"cell"},dateVal,todayLink,dateBtn)),
   );
   return {
     el,
@@ -1075,7 +1088,7 @@ function expenseFields(init,opts){
       amt="";desc="";date=todayStr();manual=false;
       amtIn.value=""; sizer.dataset.value="0"; descIn.value="";
       picker.set(CATS[0],false); sugg.style.visibility="hidden";
-      dateIn.value=date; datePill.textContent="Today";
+      setDate(date,true);
     },
   };
 }
