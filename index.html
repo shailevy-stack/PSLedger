@@ -410,10 +410,41 @@ function mk(tag,attrs,...kids){
   return e;
 }
 
+// Fallback for when push isn't set up on this device; with push active the
+// service worker already shows the partner's change, so don't double up.
+let _pushReady=false;
 function showBrowserNotification(title, body) {
-  if (Notification.permission === "granted") {
-    new Notification(title, { body, icon: "apple-touch-icon.png" });
-  }
+  try {
+    if (_pushReady || !("Notification" in window) || Notification.permission !== "granted") return;
+    if (navigator.serviceWorker) navigator.serviceWorker.ready.then(r => r.showNotification(title, { body, icon: "apple-touch-icon.png", tag: "ps-local" })).catch(() => {});
+  } catch(e) {}
+}
+
+// Short, specific push text, e.g. "Polina added Oat milk and Eggs". null = not worth a push.
+const _clip = t => t.length > 60 ? t.slice(0, 57).trim() + "…" : t;
+const _names = a => a.length <= 2 ? a.map(i => i.text).join(" and ") : `${a[0].text}, ${a[1].text} +${a.length - 2} more`;
+function shopChangeMsg(prev, next) {
+  const before = new Map(prev.map(i => [i.id, i]));
+  const added = next.filter(i => !before.has(i.id));
+  if (added.length) return `${S.user} added ${_names(added)}`;
+  const got = next.filter(i => i.done && before.has(i.id) && !before.get(i.id).done);
+  if (got.length) return `${S.user} got ${_names(got)}`;
+  const edited = next.filter(i => before.has(i.id) && before.get(i.id).text !== i.text);
+  if (edited.length) return `${S.user} changed ${_names(edited)}`;
+  const ids = new Set(next.map(i => i.id));
+  const removed = prev.filter(i => !ids.has(i.id));
+  if (removed.length) return `${S.user} removed ${_names(removed)}`;
+  return null; // reorder, colour, un-tick
+}
+function boardChangeMsg(prev, next) {
+  const before = new Map(prev.map(n => [n.id, n]));
+  const added = next.find(n => !before.has(n.id));
+  if (added) return `${S.user}: “${_clip(added.text)}”`;
+  const edited = next.find(n => before.has(n.id) && before.get(n.id).text !== n.text);
+  if (edited) return `${S.user} edited: “${_clip(edited.text)}”`;
+  const ids = new Set(next.map(n => n.id));
+  if (prev.some(n => !ids.has(n.id))) return `${S.user} removed a note`;
+  return null; // reorder, colour
 }
 
 // ── State ─────────────────────────────────────────────────────────────────────
@@ -434,6 +465,7 @@ let _lastSeenShoppingHash=null;
 let _lastSeenBoardHash=null;
 let _shopDirty=false;
 let _boardDirty=false;
+let _shopSynced=[], _boardSynced=[]; // last known server state, for describing our changes
 let _shopAutoTimer=null;
 let _boardAutoTimer=null;
 
@@ -484,6 +516,7 @@ function startListeners() {
     let parsed;
     try { parsed = JSON.parse(d.data); } catch(e) { parsed = []; }
     S.shopping = Array.isArray(parsed) ? parsed : [];
+    _shopSynced = S.shopping;
     const newHash = S.shopping.map(i=>i.id+i.done+i.color).join("|");
     if (!fromMe && _lastSeenShoppingHash !== null && newHash !== _lastSeenShoppingHash) {
       setDot("dot-shopping","new");
@@ -511,6 +544,7 @@ function startListeners() {
     let parsed;
     try { parsed = JSON.parse(d.data); } catch(e) { parsed = []; }
     S.blackboard = Array.isArray(parsed) ? parsed : [];
+    _boardSynced = S.blackboard;
     const newHash = S.blackboard.map(n=>n.id+n.text+n.color).join("|");
     if (!fromMe && _lastSeenBoardHash !== null && newHash !== _lastSeenBoardHash) {
       setDot("dot-board","new");
@@ -546,16 +580,12 @@ async function setupFCM() {
     if (permission !== "granted") return;
     const token = await messaging.getToken({ vapidKey: VAPID_KEY, serviceWorkerRegistration: reg });
     if (token) {
+      _pushReady = true;
       await db.collection("users").doc(S.user).set({
         fcmToken: token,
         updatedAt: firebase.firestore.FieldValue.serverTimestamp()
       }, { merge: true });
     }
-    messaging.onMessage(payload => {
-      const t = (payload.notification && payload.notification.title) || "PS Central";
-      const b = (payload.notification && payload.notification.body) || "New update";
-      showBrowserNotification(t, b);
-    });
   } catch(e) {
     console.warn("FCM setup:", e.message);
   }
@@ -568,7 +598,7 @@ function setDot(id, state){
 }
 
 // ── Write helpers ─────────────────────────────────────────────────────────────
-async function freshWrite(fn){
+async function freshWrite(fn,msg){
   if(writeLock)return; writeLock=true;
   setDot("dot-ledger","saving");
   try{
@@ -589,7 +619,7 @@ async function freshWrite(fn){
     if(updateLogBtn) updateLogBtn();
     setDot("dot-ledger","synced");
     sheetsLog(S.expenses);
-    notifyPartner("PS Central", S.user+" added an expense");
+    notifyPartner("Ledger", msg||S.user+" updated the ledger");
   }catch(e){ alert("Save failed: "+e.message); setDot("dot-ledger","local"); }
   writeLock=false;
 }
@@ -604,11 +634,13 @@ async function shopCommit(){
   if(!_shopDirty) return;
   setDot("dot-shopping","saving");
   try{
-    await fsWrite("shopping", S.shopping);
+    const snap=S.shopping, msg=shopChangeMsg(_shopSynced, snap);
+    await fsWrite("shopping", snap);
+    _shopSynced=snap;
     _shopDirty=false;
     _lastSeenShoppingHash=S.shopping.map(i=>i.id+i.done+i.color).join("|");
     setDot("dot-shopping","synced");
-    notifyPartner("PS Central", S.user+" updated the shopping list");
+    if(msg) notifyPartner("Shopping", msg);
   }catch(e){
     _shopDirty=false;
     setDot("dot-shopping","local"); alert("Save failed: "+e.message);
@@ -625,11 +657,13 @@ async function boardCommit(){
   if(!_boardDirty) return;
   setDot("dot-board","saving");
   try{
-    await fsWrite("blackboard", S.blackboard);
+    const snap=S.blackboard, msg=boardChangeMsg(_boardSynced, snap);
+    await fsWrite("blackboard", snap);
+    _boardSynced=snap;
     _boardDirty=false;
     _lastSeenBoardHash=S.blackboard.map(n=>n.id+n.text+n.color).join("|");
     setDot("dot-board","synced");
-    notifyPartner("PS Central", S.user+" updated the board");
+    if(msg) notifyPartner("Board", msg);
   }catch(e){
     _boardDirty=false;
     setDot("dot-board","local"); alert("Save failed: "+e.message);
@@ -662,7 +696,7 @@ function buildPick(){
       ),
       mk("div",{style:"margin-top:36px;padding-top:20px;border-top:1px solid var(--border-d);"},
         mk("button",{cls:"reset-btn",style:"display:block;margin:0 auto;",onClick:()=>window.location.reload()},"↻ Reload app"),
-        mk("div",{style:"font-size:11px;color:#bbb;letter-spacing:0.08em;margin-top:8px;"},"v6.0"),
+        mk("div",{style:"font-size:11px;color:#bbb;letter-spacing:0.08em;margin-top:8px;"},"v6.1"),
       ),
     )
   );
@@ -810,7 +844,7 @@ function buildApp(){
       expenses:[...exps,entry].sort((a,b)=>b.date.localeCompare(a.date)),
       memory:learn(mem,logDesc,logCat),
       shopping:shop,
-    }));
+    }),`${S.user} added €${amt.toFixed(2)} · ${_clip(entry.description)}`);
     logAmt="";logDesc="";logCat=CATS[0];catManual=false;logDateMode="today";
     amtInput.value="";descInput.value="";
     catSelect.value=CATS[0];catSelect.classList.remove("select-hi");autoHint.style.display="none";
@@ -944,7 +978,7 @@ function refreshHistory(){
           ),
           mk("div",{cls:"expense-right"},
             mk("span",{cls:"expense-amt"},"€"+e.amount.toFixed(2)),
-            isMine?mk("button",{cls:"delete-btn",onClick:(ev)=>{ev.stopPropagation();freshWrite((ex,m,sh)=>({expenses:ex.filter(x=>x.id!==e.id),memory:m,shopping:sh}));}},"×"):null,
+            isMine?mk("button",{cls:"delete-btn",onClick:(ev)=>{ev.stopPropagation();freshWrite((ex,m,sh)=>({expenses:ex.filter(x=>x.id!==e.id),memory:m,shopping:sh}),`${S.user} removed €${e.amount.toFixed(2)} · ${_clip(e.description)}`);}},"×"):null,
           ),
         );
         if(isMine) attachLongPress(row);
@@ -988,7 +1022,7 @@ function refreshHistory(){
             expenses:exps.map(x=>x.id===e.id?{...x,amount:amt,description:editDesc.trim(),category:editCat,date:editDate}:x)
                         .sort((a,b)=>b.date.localeCompare(a.date)),
             memory:mem, shopping:sh,
-          }));
+          }),`${S.user} edited €${amt.toFixed(2)} · ${_clip(editDesc.trim())}`);
           row.className="expense-row "+(isMine?"mine":"theirs")+" save-done";
           setTimeout(()=>{row.className="expense-row "+(isMine?"mine":"theirs");},600);
         }},"✓ Save");
