@@ -47,7 +47,7 @@
         --border:rgba(84,84,88,.8);
       }
     }
-    html,body { height:100%; background:var(--bg); font-family:var(--font); color:var(--label); -webkit-tap-highlight-color:transparent; -webkit-font-smoothing:antialiased; -webkit-text-size-adjust:100%; }
+    html,body { min-height:100%; background:var(--bg); font-family:var(--font); color:var(--label); -webkit-tap-highlight-color:transparent; -webkit-font-smoothing:antialiased; -webkit-text-size-adjust:100%; }
     #root { max-width:480px; margin:0 auto; min-height:100%; display:flex; flex-direction:column; }
 
     .sec-dot { width:7px; height:7px; border-radius:50%; display:inline-block; margin-left:5px; flex-shrink:0; vertical-align:middle; background:var(--ink-light); }
@@ -100,7 +100,9 @@
     .err-text { text-align:center; color:var(--red); margin-top:40px; font-style:italic; }
 
     /* ── App frame: large titles, bottom tab bar, segmented control ─────────── */
-    #app-shell { padding-bottom:calc(64px + var(--sb)); }
+    /* Every tab is at least a screen tall (+1px so it always scrolls), so the fixed tab bar
+       sits at the very bottom on short pages exactly as it does on long ones like History. */
+    #app-shell { padding-bottom:calc(64px + var(--sb)); min-height:calc(100vh + 1px); min-height:calc(100lvh + 1px); }
     .topbar { padding-top:var(--st); }
     .navrow { display:flex; justify-content:flex-end; align-items:center; height:44px; padding:0 16px; }
     .avatar { width:32px; height:32px; border-radius:50%; display:inline-grid; place-items:center; color:#fff; font-weight:600; font-size:14px; flex-shrink:0; }
@@ -770,7 +772,7 @@ function buildPick(){
       ),
       mk("div",{style:"margin-top:36px;padding-top:20px;border-top:1px solid var(--border-d);"},
         mk("button",{cls:"reset-btn",style:"display:block;margin:0 auto;",onClick:()=>window.location.reload()},"↻ Reload app"),
-        mk("div",{style:"font-size:11px;color:#bbb;letter-spacing:0.08em;margin-top:8px;"},"v6.4"),
+        mk("div",{style:"font-size:11px;color:#bbb;letter-spacing:0.08em;margin-top:8px;"},"v6.5"),
       ),
     )
   );
